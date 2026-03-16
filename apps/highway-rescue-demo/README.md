@@ -2,6 +2,10 @@
 
 该目录是独立于后台管理 Portal 的前端演示应用，模拟“高速事故 -> 无人机/无人狗协同救援”流程。
 
+## 技术选型
+- **Vue 3（ESM 直连）**：提供组件化状态管理与更稳定的交互组织，避免纯 HTML 脚本膨胀
+- **Leaflet + OpenStreetMap**：承载地理态势与设备标绘
+- **Cyber HUD 视觉层**：以 Gotham 风格为参考，构建偏游戏化的作战大屏
 ## 页面入口（GitHub Pages）
 - `index.html`：站点导航页（统一入口）
 - `admin-config.html`：管理配置页面（管理端示意）
