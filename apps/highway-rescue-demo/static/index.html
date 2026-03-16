@@ -410,5 +410,121 @@
 
       app.mount('#app');
     </script>
+    <title>企业数字员工导航中心</title>
+    <style>
+      :root {
+        --bg: #f3f7ff;
+        --card: #ffffff;
+        --text: #1f2a44;
+        --subtle: #5f6f8f;
+        --primary: #2b5bd7;
+        --primary-dark: #1f45ab;
+        --shadow: 0 10px 30px rgba(25, 52, 110, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: radial-gradient(circle at top, #eaf1ff 0%, var(--bg) 42%, #eef2fb 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 64px 20px 48px;
+      }
+      .hero {
+        text-align: center;
+        margin-bottom: 36px;
+      }
+      .hero h1 {
+        margin: 0 0 12px;
+        font-size: clamp(28px, 4vw, 40px);
+      }
+      .hero p {
+        margin: 0;
+        color: var(--subtle);
+        font-size: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .card {
+        background: var(--card);
+        border-radius: 16px;
+        padding: 22px;
+        box-shadow: var(--shadow);
+        border: 1px solid #e4ebfb;
+      }
+      .card h2 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 21px;
+      }
+      .card p {
+        margin-top: 0;
+        color: var(--subtle);
+        line-height: 1.6;
+        min-height: 56px;
+      }
+      .meta {
+        font-size: 13px;
+        color: #7484a8;
+        margin-bottom: 16px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        text-decoration: none;
+        border-radius: 10px;
+        padding: 11px 14px;
+        color: white;
+        background: linear-gradient(135deg, var(--primary), #4a74e5);
+        font-weight: 600;
+        transition: transform .2s ease, background .2s ease;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(135deg, var(--primary-dark), #3b67de);
+      }
+      footer {
+        text-align: center;
+        color: #7886a6;
+        font-size: 13px;
+        margin-top: 30px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <h1>企业数字员工站点导航</h1>
+        <p>将「管理配置页面」与「高速事故 Demo」分离，便于在 GitHub Pages 独立访问与演示。</p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>管理配置页面</h2>
+          <p>用于展示企业数字员工后台管理与配置入口，包含管理指标、模块列表与后续集成说明。</p>
+          <div class="meta">路径：<code>/admin-config.html</code></div>
+          <a class="btn" href="./admin-config.html">进入管理配置页面</a>
+        </article>
+
+        <article class="card">
+          <h2>高速事故救援 Demo</h2>
+          <p>无人机 / 无人狗协同救援可视化演示，支持 GitHub Pages 浏览器 Mock 与后端 API 模式。</p>
+          <div class="meta">路径：<code>/highway-demo.html</code></div>
+          <a class="btn" href="./highway-demo.html">进入高速事故 Demo</a>
+        </article>
+      </section>
+
+      <footer>EnterpriseDigitalEmployee · GitHub Pages Navigation</footer>
+    </main>
   </body>
 </html>

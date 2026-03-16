@@ -1,5 +1,9 @@
-# EnterpriseDigitalEmployee
+# EnterpriseAgentEmployee
 企业数字员工中心
+
+
+## 系统设计稿（V1）
+- `docs/enterprise-agent-employee-system-design.md`：基于行业洞察的企业数字员工完整系统设计方案（含架构、治理、运营与分阶段路线图）
 
 ## OpenClaw PiAgent 方案
 已新增《采用 OpenClaw PiAgent 作为企业数字员工内核的落地方案》，用于指导本项目以 PiAgent 为内核并兼容 OpenClaw 生态（Channel、ClawHub Skill 市场）。
@@ -19,6 +23,7 @@
 
 ## 部署
 - `apps/highway-rescue-demo/` 已支持 GitHub Pages 自动部署（见 `.github/workflows/deploy-highway-demo-pages.yml`）
+- 新增全仓 CI 工作流：`.github/workflows/ci.yml`（Python 语法检查 + 两个 Demo 服务 API 冒烟检查）
 
 
 ## 核心 MVP 运行入口
