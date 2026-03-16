@@ -6,3 +6,7 @@
 
 - 方案文档：`docs/openclaw-piagent-adoption.md`
 - 重点策略：PiAgent 原生内核 + 企业治理外壳
+
+
+## MVP 规划
+- `docs/mvp-scope-piagent-portal.md`：PiAgent + 企业数字员工管理 Portal 的最小 MVP 范围与实施步骤
