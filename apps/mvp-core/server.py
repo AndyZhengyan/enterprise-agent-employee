@@ -4,7 +4,6 @@ import os
 import random
 import threading
 import time
-import urllib.error
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -17,9 +16,15 @@ PORT = 8100
 BASE_LAT = 31.2304
 BASE_LNG = 121.4737
 
+# Preferred path: keep PiAgent runtime untouched and call it via bridge API.
+PIAGENT_PLANNER_URL = os.getenv("PIAGENT_PLANNER_URL", "").strip()
+PIAGENT_API_KEY = os.getenv("PIAGENT_API_KEY", "").strip()
+
+# Optional fallback path: OpenAI-compatible planner.
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 MODEL_TIMEOUT_SEC = float(os.getenv("MODEL_TIMEOUT_SEC", "35"))
 MODEL_MAX_RETRY = int(os.getenv("MODEL_MAX_RETRY", "2"))
 
@@ -44,15 +49,16 @@ state = {
     "audit_logs": [],
     "alerts": [],
     "agent_runtime": {
-        "agent_id": "piagent_runtime_001",
-        "engine": "PiAgent-LiteRuntime",
+        "agent_id": "enterprise_orchestrator_001",
+        "engine": "Enterprise-Orchestrator",
         "status": "online",
         "last_heartbeat": time.time(),
         "issued_command_count": 0,
-        "model_enabled": bool(OPENAI_API_KEY),
-        "model_provider": "openai-compatible",
-        "model_name": OPENAI_MODEL,
-        "last_model_call": None,
+        "planner_backends": {
+            "piagent_bridge_enabled": bool(PIAGENT_PLANNER_URL),
+            "openai_compat_enabled": bool(OPENAI_API_KEY),
+        },
+        "last_plan_call": None,
     },
     "scenario": {
         "incident": None,
@@ -230,16 +236,59 @@ def fallback_plan(payload: dict):
                 "target": {"lat": lat - 0.001, "lng": lng + 0.001},
             },
         ],
-        "notes": ["模型不可用，已启用内置应急SOP"],
+        "notes": ["planner 不可用，已启用内置应急SOP"],
     }
 
 
-def build_model_messages(task_payload: dict):
+def _build_plan_request_payload(task_payload: dict):
     tools = [
         {"asset_id": "recon_drone", "actions": ["盘旋侦查", "返航"]},
         {"asset_id": "fire_drone", "actions": ["灭火作业", "返航"]},
         {"asset_id": "rescue_dog", "actions": ["现场搜救", "返回待命"]},
     ]
+    return {
+        "task_type": "highway_incident_response",
+        "task_input": task_payload,
+        "available_tools": tools,
+        "response_schema": {
+            "summary": "string",
+            "risk_level": "low|medium|high",
+            "commands": "[{asset_id, action, target:{lat,lng}}]",
+            "notes": "string[]",
+        },
+    }
+
+
+def call_piagent_bridge(task_payload: dict):
+    if not PIAGENT_PLANNER_URL:
+        raise RuntimeError("PIAGENT_PLANNER_URL is not configured")
+
+    req_body = _build_plan_request_payload(task_payload)
+    headers = {"Content-Type": "application/json"}
+    if PIAGENT_API_KEY:
+        headers["Authorization"] = f"Bearer {PIAGENT_API_KEY}"
+
+    req = urllib.request.Request(
+        PIAGENT_PLANNER_URL,
+        data=json.dumps(req_body, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=MODEL_TIMEOUT_SEC) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    # Expected bridge response:
+    # { "plan": {summary, risk_level, commands, notes}, "meta": {...} }
+    plan = data.get("plan") if isinstance(data, dict) else None
+    if not isinstance(plan, dict):
+        raise RuntimeError("piagent bridge returned invalid plan")
+    if not isinstance(plan.get("commands"), list) or not plan.get("commands"):
+        raise RuntimeError("piagent bridge returned empty commands")
+    return {"plan": plan, "meta": data.get("meta", {})}
+
+
+def build_openai_messages(task_payload: dict):
+    req_payload = _build_plan_request_payload(task_payload)
     system_prompt = (
         "你是高速事故处置数字员工的调度规划器。"
         "请只输出JSON对象，不要输出额外解释。"
@@ -248,25 +297,20 @@ def build_model_messages(task_payload: dict):
         "commands 每项必须包含 asset_id,action,target(lat,lng)。"
         "只能使用给定资产和动作。"
     )
-    user_prompt = {
-        "task_type": "highway_incident_response",
-        "task_input": task_payload,
-        "available_tools": tools,
-    }
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps(req_payload, ensure_ascii=False)},
     ]
 
 
-def call_model_once(task_payload: dict):
+def call_openai_compat(task_payload: dict):
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     request_body = {
         "model": OPENAI_MODEL,
         "temperature": 0.2,
-        "messages": build_model_messages(task_payload),
+        "messages": build_openai_messages(task_payload),
     }
     req = urllib.request.Request(
         f"{OPENAI_BASE_URL}/chat/completions",
@@ -283,69 +327,76 @@ def call_model_once(task_payload: dict):
 
     text = data["choices"][0]["message"]["content"]
     plan = json.loads(extract_json_block(text))
-
     commands = plan.get("commands")
     if not isinstance(commands, list) or len(commands) == 0:
-        raise RuntimeError("model returned empty commands")
-
+        raise RuntimeError("openai planner returned empty commands")
     return {
         "plan": plan,
-        "raw": text,
-        "usage": data.get("usage", {}),
-        "model": data.get("model", OPENAI_MODEL),
-        "id": data.get("id"),
+        "meta": {
+            "provider": "openai-compatible",
+            "model": data.get("model", OPENAI_MODEL),
+            "usage": data.get("usage", {}),
+        },
     }
 
 
+def _record_plan_result(trace_id: str, backend: str, ok: bool, detail=None):
+    with state_lock:
+        state["agent_runtime"]["last_plan_call"] = {
+            "trace_id": trace_id,
+            "backend": backend,
+            "ok": ok,
+            "at": now(),
+            "detail": detail or {},
+        }
+        append_audit(
+            "planner_call",
+            backend,
+            "ok" if ok else "failed",
+            trace_id,
+            detail=detail or {},
+        )
+
+
 def generate_plan(task_payload: dict, trace_id: str):
-    last_error = None
-    for attempt in range(1, MODEL_MAX_RETRY + 1):
-        started = now()
-        try:
-            result = call_model_once(task_payload)
-            latency_ms = int((now() - started) * 1000)
-            with state_lock:
-                state["agent_runtime"]["last_model_call"] = {
-                    "trace_id": trace_id,
-                    "ok": True,
-                    "latency_ms": latency_ms,
-                    "at": now(),
-                    "model": result.get("model", OPENAI_MODEL),
-                }
-                append_audit(
-                    "model_call",
-                    "chat.completions",
-                    "ok",
+    backends = [
+        ("piagent_bridge", call_piagent_bridge),
+        ("openai_compat", call_openai_compat),
+    ]
+
+    errors = []
+    for backend_name, backend_fn in backends:
+        for attempt in range(1, MODEL_MAX_RETRY + 1):
+            started = now()
+            try:
+                result = backend_fn(task_payload)
+                latency_ms = int((now() - started) * 1000)
+                _record_plan_result(
                     trace_id,
-                    detail={
+                    backend_name,
+                    True,
+                    {
                         "attempt": attempt,
                         "latency_ms": latency_ms,
-                        "usage": result.get("usage", {}),
+                        "meta": result.get("meta", {}),
                     },
                 )
-            return result["plan"], "model"
-        except Exception as exc:
-            last_error = str(exc)
-            with state_lock:
-                state["agent_runtime"]["last_model_call"] = {
-                    "trace_id": trace_id,
-                    "ok": False,
-                    "at": now(),
-                    "error": last_error,
-                }
-                append_audit(
-                    "model_call",
-                    "chat.completions",
-                    "failed",
+                return result["plan"], backend_name
+            except Exception as exc:
+                last_error = str(exc)
+                errors.append({"backend": backend_name, "attempt": attempt, "error": last_error})
+                _record_plan_result(
                     trace_id,
-                    detail={"attempt": attempt, "error": last_error},
+                    backend_name,
+                    False,
+                    {"attempt": attempt, "error": last_error},
                 )
-            if attempt < MODEL_MAX_RETRY:
-                time.sleep(0.8 * attempt)
+                if attempt < MODEL_MAX_RETRY:
+                    time.sleep(0.8 * attempt)
 
     with state_lock:
-        append_alert("model_fallback", f"模型调用失败，使用回退策略：{last_error}", "medium")
-    return fallback_plan(task_payload), "fallback"
+        append_alert("planner_fallback", f"规划器不可用，使用回退策略：{errors[-1]['error']}", "medium")
+    return fallback_plan(task_payload), "fallback_sop"
 
 
 def create_task(task_type: str, payload: dict):
@@ -414,8 +465,8 @@ def run_agent_task(task_id: str):
             task = state["tasks"][task_id]
             trace_id = task["trace_id"]
             payload = dict(task["input"])
-            append_step(task, "Plan", "running", {"message": "准备调用模型进行计划生成"})
-            scenario_log(f"任务 {task_id}：PiAgent 开始规划处置流程。")
+            append_step(task, "Plan", "running", {"message": "调用外部规划器（优先 PiAgent Bridge）"})
+            scenario_log(f"任务 {task_id}：Orchestrator 开始规划处置流程。")
             append_audit("plan", task_id, "start", trace_id)
 
         plan, plan_source = generate_plan(payload, trace_id)
