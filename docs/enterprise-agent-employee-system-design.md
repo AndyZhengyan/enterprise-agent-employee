@@ -242,6 +242,12 @@ CLI适配器 > MCP适配器 > API适配器 > CU/BU适配器
 - 企业知识中心
 - AI大模型中心
 
+### 5.4 前端统一架构要求（新增）
+- 全仓前端统一采用 **Vue 3 ESM 模块化**（后续可平滑迁移 Vite/SFC）。
+- 页面必须按“视图层 + 应用层 + 数据/引擎层”拆分，禁止大型 inline 脚本。
+- 地图类页面必须抽离 `map-engine`/`map` 模块封装渲染职责。
+- 架构细则见：`docs/frontend-framework-requirements.md`。
+
 ---
 
 ## 6. 安全与治理设计

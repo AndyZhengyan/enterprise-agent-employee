@@ -4,11 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MVP 首页</title>
-  <style>body{font-family:Arial,sans-serif;padding:24px}a{display:block;margin:8px 0}</style>
+  <style>
+    body{margin:0;font-family:"Inter","PingFang SC",sans-serif;background:#0b1020;color:#eaf1ff;min-height:100vh;display:grid;place-items:center}
+    .wrap{width:min(840px,92%);border:1px solid #27365c;border-radius:14px;padding:26px;background:linear-gradient(135deg,rgba(122,162,255,.12),rgba(122,162,255,.03))}
+    h1{margin:0 0 8px}
+    p{color:#a6b6d6}
+    .links{display:grid;gap:10px;margin-top:16px}
+    a{color:#d8e7ff;text-decoration:none;border:1px solid #37508d;border-radius:10px;padding:10px 12px;background:rgba(22,34,63,.78)}
+  </style>
 </head>
 <body>
-  <h1>Enterprise Digital Employee MVP</h1>
-  <a href="/console">进入管理控制台（Console）</a>
-  <a href="/scenario">进入高速事故处理 Demo（Scenario）</a>
+  <main id="app" class="wrap">
+    <h1>{{ title }}</h1>
+    <p>{{ subtitle }}</p>
+    <section class="links">
+      <a v-for="entry in entries" :key="entry.href" :href="entry.href">{{ entry.label }}</a>
+    </section>
+  </main>
+  <script type="module" src="/static/index-app.js"></script>
 </body>
 </html>

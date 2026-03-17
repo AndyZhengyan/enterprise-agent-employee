@@ -10,6 +10,12 @@
 - 本服务只负责企业外围能力：任务接入、审计、告警、风险提示、命令下发。
 - 当 PiAgent bridge 不可用时，按顺序降级到 OpenAI-compatible，再降级到内置 SOP。
 
+
+## 前端统一框架
+- 采用 Vue 3 ESM 模块化，页面按 `HTML + *-app.js (+ *-map.js/*-data.js)` 分层。
+- 已覆盖 `index/console/scenario` 三个页面，统一到同一框架范式。
+- 全局约束见 `docs/frontend-framework-requirements.md`。
+
 ## 运行
 ```bash
 cd apps/mvp-core

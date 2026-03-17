@@ -6,21 +6,21 @@
   <title>高速事故处理场景 Demo</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body{margin:0;font-family:Arial,sans-serif;background:#f5f7fb}
-    header{padding:12px 16px;background:#0f4c81;color:#fff;display:flex;justify-content:space-between}
+    body{margin:0;font-family:"Inter","PingFang SC",sans-serif;background:#f5f7fb}
+    header{padding:12px 16px;background:#0f4c81;color:#fff;display:flex;justify-content:space-between;align-items:center}
     .container{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px;height:calc(100vh - 56px);box-sizing:border-box}
-    #map{width:100%;height:100%;border-radius:8px}
-    .panel{background:#fff;border-radius:8px;padding:12px;overflow:auto}
+    #map{width:100%;height:100%;border-radius:8px}.panel{background:#fff;border-radius:8px;padding:12px;overflow:auto}
     .btn{background:#0f4c81;color:#fff;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;margin-right:8px}
     .asset,.log{border-bottom:1px solid #eee;padding:6px 0;font-size:13px}
   </style>
 </head>
 <body>
+<div id="app">
 <header>
   <div>核心高速事故处理场景 Demo</div>
   <div>
-    <button class="btn" onclick="triggerTask()">触发事故任务（Agent）</button>
-    <button class="btn" onclick="resetScenario()">重置</button>
+    <button class="btn" @click="triggerTask">触发事故任务（Agent）</button>
+    <button class="btn" @click="resetScenario">重置</button>
     <a href="/console" style="color:#fff">返回控制台</a>
   </div>
 </header>
@@ -28,61 +28,17 @@
   <div id="map"></div>
   <div class="panel">
     <h3>事故态势</h3>
-    <div id="incident">当前事故：无</div>
+    <div>当前事故：{{ incidentText }}</div>
     <h3>设备状态</h3>
-    <div id="assets"></div>
+    <div class="asset" v-for="a in assets" :key="a.id"><strong>{{ a.name }}</strong> - {{ a.status }}<br/>{{ a.lat.toFixed(5) }}, {{ a.lng.toFixed(5) }}</div>
     <h3>Agent 指令流</h3>
-    <div id="commands"></div>
+    <div class="log" v-for="c in commands" :key="c.id">[{{ fmtTs(c.created_at) }}] {{ c.issued_by }} -> {{ c.asset_id }}：{{ c.action }}（{{ c.status }}）</div>
+    <div class="log" v-if="!commands.length">暂无指令</div>
     <h3>事件日志</h3>
-    <div id="logs"></div>
+    <div class="log" v-for="l in logs" :key="l.ts + l.message">[{{ fmtTs(l.ts) }}] {{ l.message }}</div>
   </div>
 </div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-  const map = L.map('map').setView([31.2304,121.4737],12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
-  const icons={
-    recon_drone:L.divIcon({html:'🛰️',className:'',iconSize:[24,24]}),
-    fire_drone:L.divIcon({html:'🚁',className:'',iconSize:[24,24]}),
-    rescue_dog:L.divIcon({html:'🐕',className:'',iconSize:[24,24]}),
-    incident:L.divIcon({html:'🚧',className:'',iconSize:[24,24]})
-  };
-  const markers={};
-  function upsert(id,lat,lng,icon,popup){
-    if(!markers[id]) markers[id]=L.marker([lat,lng],{icon}).addTo(map);
-    else markers[id].setLatLng([lat,lng]);
-    markers[id].bindPopup(popup);
-  }
-  async function refresh(){
-    const [data, commandsResp] = await Promise.all([
-      fetch('/api/scenario').then(r=>r.json()),
-      fetch('/api/commands').then(r=>r.json())
-    ]);
-    const assets=Object.values(data.assets||{});
-    document.getElementById('assets').innerHTML=assets.map(a=>{
-      upsert(a.id,a.lat,a.lng,icons[a.type],`${a.name}<br/>${a.status}`);
-      return `<div class="asset"><strong>${a.name}</strong> - ${a.status}<br/>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</div>`;
-    }).join('');
-    if(data.incident){
-      const i=data.incident;
-      document.getElementById('incident').innerText=`当前事故：${i.id}（${i.status}）`;
-      upsert('incident',i.lat,i.lng,icons.incident,`${i.id}<br/>${i.status}`);
-    }else{
-      document.getElementById('incident').innerText='当前事故：无';
-    }
-    document.getElementById('logs').innerHTML=(data.logs||[]).slice().reverse().slice(0,20).map(l=>`<div class="log">[${new Date(l.ts*1000).toLocaleTimeString()}] ${l.message}</div>`).join('');
-    document.getElementById('commands').innerHTML=(commandsResp.items||[]).slice(0,12).map(c=>`<div class="log">[${new Date(c.created_at*1000).toLocaleTimeString()}] ${c.issued_by} -> ${c.asset_id}：${c.action}（${c.status}）</div>`).join('') || '<div class="log">暂无指令</div>';
-  }
-  async function triggerTask(){
-    await fetch('/api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_type:'highway_incident_response',priority:'P1'})});
-    await refresh();
-  }
-  async function resetScenario(){
-    await fetch('/api/scenario/reset',{method:'POST'});
-    await refresh();
-  }
-  refresh();
-  setInterval(refresh,1000);
-</script>
+</div>
+<script type="module" src="/static/scenario-app.js"></script>
 </body>
 </html>
