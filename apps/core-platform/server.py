@@ -815,7 +815,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     server = HTTPServer((HOST, PORT), Handler)
-    print(f"MVP core running on http://{HOST}:{PORT}")
+    print(f"core platform running on http://{HOST}:{PORT}")
     server.serve_forever()
 
 

@@ -4,7 +4,7 @@
 
 当前阶段可参考以下规划文档：
 - `docs/openclaw-piagent-adoption.md`
-- `docs/mvp-scope-piagent-portal.md`
+- `docs/layered-delivery-roadmap.md`
 
 后续将优先落地：
 - 员工列表/详情

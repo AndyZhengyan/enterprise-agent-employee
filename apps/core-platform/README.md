@@ -1,6 +1,6 @@
-# MVP Core
+# Core Platform
 
-该目录包含最小可运行 MVP：
+该目录包含最小可运行基线平台：
 - 外围企业编排层（Orchestrator）
 - 基础控制台（数字员工、任务、告警）
 - 高速事故处理场景 Demo（地图态势 + 联动日志）
@@ -12,7 +12,7 @@
 
 ## 运行
 ```bash
-cd apps/mvp-core
+cd apps/core-platform
 python3 server.py
 ```
 
