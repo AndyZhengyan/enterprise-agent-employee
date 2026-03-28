@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import secrets
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from common.errors import EAgentError, ErrorCode
@@ -16,6 +19,27 @@ from common.tracing import configure_logging, get_logger, new_trace_id, trace_co
 # 配置日志
 configure_logging()
 log = get_logger("gateway")
+
+# ============== Auth helpers ==============
+
+security = HTTPBearer(auto_error=False)
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
+
+
+async def get_current_client(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Optional[str]:
+    """Extract client id from Bearer token. Returns None if no token."""
+    if credentials is None:
+        return None
+    return credentials.credentials
+
+
+def verify_webhook(request: Request) -> bool:
+    """Verify webhook request via X-Webhook-Secret header."""
+    secret = request.headers.get("x-webhook-secret", "")
+    return secrets.compare_digest(secret, WEBHOOK_SECRET) if WEBHOOK_SECRET else False
+
 
 # ============== FastAPI App ==============
 
@@ -72,12 +96,20 @@ async def _dispatch_to_runtime(request: DispatchRequest, trace_id: str) -> Dispa
 # ============== 路由 ==============
 
 @app.post("/gateway/dispatch", response_model=DispatchResponse)
-async def dispatch_task(req: DispatchRequest, request: Request):
+async def dispatch_task(req: DispatchRequest, request: Request, client_id: str = Depends(get_current_client)):
     """
     任务分发接口。
 
     将用户请求分发到对应的 AgentFamily 处理。
     """
+    if client_id is None:
+        return JSONResponse(
+            status_code=401,
+            content=BaseResponse(
+                success=False,
+                error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Missing Bearer token"),
+            ).model_dump(),
+        )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, employee_id=req.employee_id)
 
@@ -101,12 +133,20 @@ async def dispatch_task(req: DispatchRequest, request: Request):
 
 
 @app.post("/gateway/callback")
-async def webhook_callback(req: CallbackRequest):
+async def webhook_callback(req: CallbackRequest, request: Request):
     """
     Webhook 回调接口。
 
     接收外部系统的回调通知。
     """
+    if not verify_webhook(request):
+        return JSONResponse(
+            status_code=401,
+            content=BaseResponse(
+                success=False,
+                error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Invalid webhook secret"),
+            ).model_dump(),
+        )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, task_id=req.task_id)
 
@@ -117,12 +157,20 @@ async def webhook_callback(req: CallbackRequest):
 
 
 @app.get("/gateway/session/{session_id}/history")
-async def get_session_history(session_id: str):
+async def get_session_history(session_id: str, client_id: str = Depends(get_current_client)):
     """
     获取会话历史。
 
     返回指定 session_id 的消息历史。
     """
+    if client_id is None:
+        return JSONResponse(
+            status_code=401,
+            content=BaseResponse(
+                success=False,
+                error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Missing Bearer token"),
+            ).model_dump(),
+        )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, session_id=session_id)
 
@@ -178,7 +226,9 @@ async def general_error_handler(request: Request, exc: Exception):
         status_code=500,
         content=BaseResponse(
             success=False,
-            error=ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(details=str(exc)),
+            error=ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(
+                details="An internal error occurred. Contact support with trace_id."
+            ),
             trace_id=trace_id,
         ).model_dump(),
     )
