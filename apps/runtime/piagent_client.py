@@ -166,7 +166,13 @@ class PiAgentClient:
         return args
 
     def _get_gateway_url(self) -> str:
-        """获取 Gateway URL（用于环境变量）"""
+        """
+        获取 Gateway URL（用于环境变量）
+
+        Note: Always use https:// in production. HTTP is only acceptable
+        on localhost (127.0.0.1). When deploying, ensure OPENCLAW_GATEWAY_URL
+        uses https:// and the TLS certificate is valid.
+        """
         return f"http://127.0.0.1:{self.gateway_port}"
 
     def invoke(self, message: str, session_id: Optional[str] = None) -> PiAgentResult:
