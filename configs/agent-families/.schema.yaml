@@ -1,0 +1,159 @@
+# AgentFamily 配置 Schema
+# 每个 AgentFamily YAML 必须符合此 schema
+
+$schema: "http://json-schema.org/draft-07/schema#"
+title: "AgentFamily"
+description: "企业数字员工岗位族配置"
+
+type: object
+required:
+  - family_id
+  - family_name
+  - identity
+
+properties:
+  family_id:
+    type: string
+    pattern: "^[a-z][a-z0-9-]*$"
+    description: "唯一标识，字母开头，支持小写字母、数字、连字符"
+    examples:
+      - "legal-specialist"
+      - "rd-engineer"
+      - "hr-assistant"
+
+  family_name:
+    type: string
+    minLength: 1
+    maxLength: 50
+    description: "显示名称"
+    examples:
+      - "法务专员"
+      - "软件开发工程师"
+
+  description:
+    type: string
+    maxLength: 200
+    description: "岗位描述"
+
+  soul:
+    $ref: "#/definitions/Soul"
+
+  identity:
+    $ref: "#/definitions/Identity"
+    # identity 是唯一 required
+
+  agent:
+    $ref: "#/definitions/Agent"
+
+  policy:
+    $ref: "#/definitions/Policy"
+
+  version:
+    type: string
+    default: "1.0"
+    pattern: "^\\d+\\.\\d+$"
+
+definitions:
+  Soul:
+    type: object
+    properties:
+      mbti:
+        type: string
+        enum: ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+               "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"]
+        description: "MBTI人格类型"
+      communication_style:
+        type: string
+        default: "专业、简洁"
+        maxLength: 200
+        description: "沟通风格描述"
+      risk_preference:
+        type: string
+        enum: ["low", "medium", "high"]
+        default: "medium"
+        description: "风险偏好"
+
+  Identity:
+    type: object
+    required:
+      - role
+      - employee_id
+    properties:
+      role:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: "岗位角色名称"
+      employee_id:
+        type: string
+        pattern: "^DE-AI-\\d+$"
+        description: "数字员工工号，格式 DE-AI-XXX"
+      feishu_id:
+        type: string
+        description: "飞书账号ID"
+      organization:
+        type: string
+        maxLength: 100
+        description: "所属部门"
+      reporting_to:
+        type: string
+        maxLength: 100
+        description: "汇报对象"
+
+  Agent:
+    type: object
+    properties:
+      responsibilities:
+        type: array
+        items:
+          type: string
+        minItems: 1
+        description: "职责列表"
+      service_for:
+        type: array
+        items:
+          type: string
+        description: "服务对象列表"
+      boundaries:
+        type: array
+        items:
+          type: string
+        description: "能力边界"
+      kpi:
+        type: array
+        items:
+          type: object
+          required: ["metric", "target"]
+          properties:
+            metric: { type: string }
+            target: { type: string }
+        description: "KPI指标"
+      collaboration_matrix:
+        type: array
+        items:
+          type: object
+          properties:
+            role: { type: string }
+            relation: { type: string }
+
+  Policy:
+    type: object
+    properties:
+      skills:
+        type: array
+        items:
+          type: string
+        description: "绑定的技能ID列表"
+      tools:
+        type: array
+        items:
+          type: string
+        description: "允许的工具列表"
+      approval_required:
+        type: array
+        items:
+          type: string
+        description: "需要审批的操作列表"
+      max_single_task_cost:
+        type: string
+        description: "单次任务Token成本上限"
