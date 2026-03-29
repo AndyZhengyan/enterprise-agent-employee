@@ -21,7 +21,7 @@ jobs:
           cache: pip
 
       - name: Install lint tools
-        run: pip install "ruff>=0.9.0" "mypy>=1.14.0"
+        run: pip install ".[dev]"
 
       - name: Ruff check
         run: ruff check apps/ common/

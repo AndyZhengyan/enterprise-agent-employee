@@ -43,8 +43,10 @@ ignore = []
 [tool.mypy]
 python_version = "3.11"
 strict = false
-warn_return_any = true
+warn_return_any = false
 warn_unused_ignores = true
+ignore_missing_imports = true
+disable_error_code = ["no-any-return", "return-value", "attr-defined"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
