@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -206,6 +207,41 @@ class PiAgentClient:
     2. 基于配置的连接管理。
     3. 流式与非流式调用。
     """
+
+    DEFAULT_AGENT = "chat"
+    GATEWAY_PORT = 18789
+
+    @classmethod
+    def _get_token(cls) -> str:
+        """从环境变量或配置文件读取 Gateway token"""
+        import os
+        token = os.environ.get("OPENCLAW_GATEWAY_TOKEN")
+        if token:
+            return token
+        config_path = os.path.expanduser("~/.openclaw/openclaw.json")
+        try:
+            with open(config_path) as f:
+                cfg = json.load(f)
+                token = cfg.get("gateway", {}).get("auth", {}).get("token", "")
+                if not token:
+                    raise KeyError("gateway.auth.token is empty")
+                return token
+        except FileNotFoundError:
+            raise PiAgentError(
+                f"OpenClaw config not found at {config_path}. "
+                "Run `openclaw gateway init` to configure.",
+                agent_id=None,
+            )
+        except json.JSONDecodeError as e:
+            raise PiAgentError(
+                f"Invalid OpenClaw config at {config_path}: {e}",
+                agent_id=None,
+            )
+        except KeyError:
+            raise PiAgentError(
+                f"OpenClaw config at {config_path} is missing 'gateway.auth.token' field.",
+                agent_id=None,
+            )
 
     def __init__(
         self,
@@ -542,20 +578,29 @@ class PiAgentSession:
 
 
 class PiAgentSessionManager:
-    """PiAgent 会话管理器。管理多个会话的生命周期。"""
+    """管理多个会话的生命周期，支持 LRU 淘汰（上限 1000 个）。"""
 
-    def __init__(self, default_agent: str = "chat"):
+    MAX_SESSIONS = 1000
+
+    def __init__(self, default_agent: str = PiAgentClient.DEFAULT_AGENT):
         self.default_agent = default_agent
-        self._sessions: Dict[str, PiAgentSession] = {}
+        self._sessions: OrderedDict[str, PiAgentSession] = OrderedDict()
 
     def get_or_create(
         self,
         session_id: Optional[str] = None,
         agent_id: Optional[str] = None,
     ) -> PiAgentSession:
-        """获取或创建会话"""
+        """获取或创建会话（LRU 淘汰）"""
         if session_id and session_id in self._sessions:
+            self._sessions.move_to_end(session_id)
             return self._sessions[session_id]
+
+        if len(self._sessions) >= self.MAX_SESSIONS:
+            # 淘汰最旧的会话
+            oldest = next(iter(self._sessions))
+            del self._sessions[oldest]
+
         client = PiAgentClient(agent_id=agent_id or self.default_agent)
         session = PiAgentSession(client, session_id)
         if session_id:

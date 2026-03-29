@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -74,6 +74,8 @@ class RuntimeExecutor:
         gateway_token: Optional[str] = None,
         timeout_seconds: int = 300,
     ):
+        if not employee_id or not employee_id.strip():
+            raise ValueError("employee_id must be a non-empty string")
         self.employee_id = employee_id
         self.task_id = task_id
         self.agent_id = agent_id or self.AGENT_FOR_SIMPLE
@@ -107,7 +109,7 @@ class RuntimeExecutor:
     def start(self) -> None:
         """开始执行"""
         self.state = ExecutionState.RUNNING
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
 
     def complete(self, result: Dict[str, Any]) -> None:
         """标记完成"""
@@ -129,6 +131,15 @@ class RuntimeExecutor:
     def cancel(self) -> None:
         """取消执行"""
         self.state = ExecutionState.CANCELLED
+
+    def _build_answer(self) -> str:
+        """从 step_results 构建最终回答"""
+        if not self.step_results:
+            return ""
+        last_result = self.step_results[-1]
+        output = last_result.get("result", {}).get("output", {})
+        text = output.get("text", "")
+        return text or ""
 
     def _select_agent(self, task: str, available_skills: List[str]) -> str:
         """
@@ -250,7 +261,7 @@ class RuntimeExecutor:
             try:
                 # 构建调用 prompt
                 if step.type == "call_skill":
-                    skill_name = step.skill or ""
+                    skill_name = step.skill
                     input_json = json_module.dumps(step.input, ensure_ascii=False)
                     framed_input = _framed_prompt(input_json, "skill_param")
                     prompt = f"执行技能：{skill_name}\n{framed_input}\n请调用该技能并返回结果。只返回结果，不要解释。"

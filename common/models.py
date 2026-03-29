@@ -102,8 +102,7 @@ class TaskContext(BaseModel):
 
 class TaskInput(BaseModel):
     """任务输入"""
-
-    query: str
+    query: str = Field(..., max_length=10000)
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -116,7 +115,7 @@ class Task(BaseModel):
     task_type: TaskType
     priority: Priority = Priority.NORMAL
     status: TaskStatus = TaskStatus.QUEUED
-    input_content: str
+    input_content: str = Field(..., max_length=10000)
     output_content: Optional[str] = None
     error_message: Optional[str] = None
     context: Optional[TaskContext] = None
