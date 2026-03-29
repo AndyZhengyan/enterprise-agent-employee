@@ -15,7 +15,7 @@ from slowapi import Limiter, RateLimitExceeded
 from slowapi.errors import RateLimitExceeded as RateLimitExc
 from slowapi.util import get_remote_address
 
-from common.errors import EAgentError, ErrorCode
+from common.errors import EAgentError, ErrorCode, ErrorDetail
 from common.models import BaseResponse, Priority, TaskStatus, TaskType
 from common.tracing import configure_logging, get_logger, new_trace_id
 
@@ -141,7 +141,7 @@ async def dispatch_task(req: DispatchRequest, request: Request, client_id: str =
             status_code=400,
             content=BaseResponse(
                 success=False,
-                error=e.to_dict(),
+                error=ErrorDetail(**e.to_dict()),
                 trace_id=trace_id,
             ).model_dump(),
         )
@@ -252,9 +252,7 @@ async def general_error_handler(request: Request, exc: Exception):
         status_code=500,
         content=BaseResponse(
             success=False,
-            error=ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(
-                details="An internal error occurred. Contact support with trace_id."
-            ),
+            error=ErrorDetail(**ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(details=str(exc))),
             trace_id=trace_id,
         ).model_dump(),
     )
