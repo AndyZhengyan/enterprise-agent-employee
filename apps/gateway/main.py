@@ -237,7 +237,7 @@ async def eagent_error_handler(request: Request, exc: EAgentError):
         status_code=400,
         content=BaseResponse(
             success=False,
-            error=exc.to_dict(),
+            error=ErrorDetail(**exc.to_dict()),
         ).model_dump(),
     )
 
