@@ -9,14 +9,14 @@ from __future__ import annotations
 import asyncio
 import enum
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from apps.runtime.models import PlanStep, TaskResult
 
-from .piagent_client import PiAgentClient, PiAgentError, PiAgentResult, PiAgentTimeoutError
-
+from .piagent_client import PiAgentClient, PiAgentError, PiAgentTimeoutError
 
 # ============== Prompt injection mitigation ==============
+
 
 def _framed_prompt(content: str, role: str) -> str:
     """Wrap untrusted content in XML delimiters to reduce prompt injection risk.
@@ -34,6 +34,7 @@ def _framed_prompt(content: str, role: str) -> str:
 
 class ExecutionState(enum.Enum):
     """执行状态"""
+
     IDLE = "idle"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -248,20 +249,12 @@ class RuntimeExecutor:
                     skill_name = step.skill or step.skill
                     input_json = json_module.dumps(step.input, ensure_ascii=False)
                     framed_input = _framed_prompt(input_json, "skill_param")
-                    prompt = (
-                        f"执行技能：{skill_name}\n"
-                        f"{framed_input}\n"
-                        f"请调用该技能并返回结果。只返回结果，不要解释。"
-                    )
+                    prompt = f"执行技能：{skill_name}\n{framed_input}\n请调用该技能并返回结果。只返回结果，不要解释。"
                 elif step.type == "call_connector":
                     connector_name = step.connector or ""
                     input_json = json_module.dumps(step.input, ensure_ascii=False)
                     framed_input = _framed_prompt(input_json, "connector_param")
-                    prompt = (
-                        f"执行连接器：{connector_name}\n"
-                        f"{framed_input}\n"
-                        f"请执行并返回结果。"
-                    )
+                    prompt = f"执行连接器：{connector_name}\n{framed_input}\n请执行并返回结果。"
                 else:
                     prompt = f"执行步骤：{step.type}\n输入：{json_module.dumps(step.input, ensure_ascii=False)}"
 
@@ -316,8 +309,8 @@ class RuntimeExecutor:
             f"剩余步骤：{remaining}\n"
             f"{framed_results}\n"
             f"请评估：\n"
-            f'1. 当前进度是否正常？\n'
-            f'2. 是否应该继续执行剩余步骤？\n'
+            f"1. 当前进度是否正常？\n"
+            f"2. 是否应该继续执行剩余步骤？\n"
             f"以 JSON 格式返回：\n"
             f'{{"continue": true/false, "reason": "<原因>", "assessment": "<评估>"}}\n'
             f"只返回 JSON。"
@@ -385,10 +378,12 @@ class RuntimeExecutor:
                 try:
                     # Act
                     result = await self.execute_step(step)
-                    self.step_results.append({
-                        "order": step.order,
-                        "result": result,
-                    })
+                    self.step_results.append(
+                        {
+                            "order": step.order,
+                            "result": result,
+                        }
+                    )
 
                     # Reflect
                     reflect_decision = await self.reflect(
@@ -410,10 +405,12 @@ class RuntimeExecutor:
                             step,
                             retries=max_retries - 1,
                         )
-                        self.step_results.append({
-                            "order": step.order,
-                            "result": result,
-                        })
+                        self.step_results.append(
+                            {
+                                "order": step.order,
+                                "result": result,
+                            }
+                        )
                     else:
                         # 重试耗尽
                         if self.retry_config.get("enable_escalation", True):
@@ -424,11 +421,13 @@ class RuntimeExecutor:
 
             # 3. 完成
             if self.state == ExecutionState.RUNNING:
-                self.complete({
-                    "answer": self._build_answer(),
-                    "sources": [],
-                    "actions": [],
-                })
+                self.complete(
+                    {
+                        "answer": self._build_answer(),
+                        "sources": [],
+                        "actions": [],
+                    }
+                )
 
         except Exception as e:
             self.fail(str(e))

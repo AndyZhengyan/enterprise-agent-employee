@@ -7,17 +7,17 @@ import secrets
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from slowapi import Limiter, RateLimitExceeded
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded as RateLimitExc
 from slowapi.util import get_remote_address
 
-from common.errors import EAgentError, ErrorCode
-from common.models import BaseResponse, Channel, Priority, TaskStatus, TaskType
-from common.tracing import configure_logging, get_logger, new_trace_id, trace_context
+from common.errors import EAgentError, ErrorCode, ErrorDetail
+from common.models import BaseResponse, Priority, TaskStatus, TaskType
+from common.tracing import configure_logging, get_logger, new_trace_id
 
 # 配置日志
 configure_logging()
@@ -60,8 +60,10 @@ app = FastAPI(
 
 # ============== 请求/响应模型 ==============
 
+
 class DispatchRequest(BaseModel):
     """任务分发请求"""
+
     employee_id: str = Field(..., description="Agent ID")
     task_type: TaskType = Field(default=TaskType.INQUIRY)
     content: str = Field(..., description="任务内容")
@@ -75,6 +77,7 @@ class DispatchRequest(BaseModel):
 
 class DispatchResponse(BaseModel):
     """任务分发响应"""
+
     task_id: str
     status: TaskStatus
     estimated_duration_ms: int = 5000
@@ -83,12 +86,14 @@ class DispatchResponse(BaseModel):
 
 class CallbackRequest(BaseModel):
     """Webhook 回调请求"""
+
     event_type: str  # task.completed | task.failed
     task_id: str
     result: Optional[Dict[str, Any]] = None
 
 
 # ============== 辅助函数 ==============
+
 
 async def _dispatch_to_runtime(request: DispatchRequest, trace_id: str) -> DispatchResponse:
     """将请求分发到 Runtime"""
@@ -102,6 +107,7 @@ async def _dispatch_to_runtime(request: DispatchRequest, trace_id: str) -> Dispa
 
 
 # ============== 路由 ==============
+
 
 @app.post("/gateway/dispatch", response_model=DispatchResponse)
 @limiter.limit("60/minute")
@@ -135,7 +141,7 @@ async def dispatch_task(req: DispatchRequest, request: Request, client_id: str =
             status_code=400,
             content=BaseResponse(
                 success=False,
-                error=e.to_dict(),
+                error=ErrorDetail(**e.to_dict()),
                 trace_id=trace_id,
             ).model_dump(),
         )
@@ -153,7 +159,7 @@ async def webhook_callback(req: CallbackRequest, request: Request):
             status_code=401,
             content=BaseResponse(
                 success=False,
-                error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Invalid webhook secret"),
+                error=ErrorDetail(**ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Invalid webhook secret")),
             ).model_dump(),
         )
     trace_id = new_trace_id()
@@ -211,6 +217,7 @@ async def health_check():
 
 # ============== 异常处理 ==============
 
+
 @app.exception_handler(RateLimitExc)
 async def rate_limit_handler(request: Request, exc: RateLimitExc):
     """Rate limit exceeded handler"""
@@ -218,7 +225,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExc):
         status_code=429,
         content=BaseResponse(
             success=False,
-            error=ErrorCode.GATEWAY_RATE_LIMITED.to_dict(details="Rate limit exceeded. Retry after 1 minute."),
+            error=ErrorDetail(
+                **ErrorCode.GATEWAY_RATE_LIMITED.to_dict(details="Rate limit exceeded. Retry after 1 minute.")
+            ),
         ).model_dump(),
     )
 
@@ -232,7 +241,7 @@ async def eagent_error_handler(request: Request, exc: EAgentError):
         status_code=400,
         content=BaseResponse(
             success=False,
-            error=exc.to_dict(),
+            error=ErrorDetail(**exc.to_dict()),
         ).model_dump(),
     )
 
@@ -247,9 +256,7 @@ async def general_error_handler(request: Request, exc: Exception):
         status_code=500,
         content=BaseResponse(
             success=False,
-            error=ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(
-                details="An internal error occurred. Contact support with trace_id."
-            ),
+            error=ErrorDetail(**ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(details=str(exc))),
             trace_id=trace_id,
         ).model_dump(),
     )
@@ -259,4 +266,5 @@ async def general_error_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
