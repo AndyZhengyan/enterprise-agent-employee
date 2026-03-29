@@ -15,8 +15,8 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded as RateLimitExc
 from slowapi.util import get_remote_address
 
-from common.errors import EAgentError, ErrorCode, ErrorDetail
-from common.models import BaseResponse, Priority, TaskStatus, TaskType
+from common.errors import EAgentError, ErrorCode
+from common.models import BaseResponse, ErrorDetail, Priority, TaskStatus, TaskType
 from common.tracing import configure_logging, get_logger, new_trace_id
 
 # 配置日志
@@ -123,7 +123,7 @@ async def dispatch_task(req: DispatchRequest, request: Request, client_id: str =
             content=BaseResponse(
                 success=False,
                 error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Missing Bearer token"),
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, employee_id=req.employee_id)
@@ -143,7 +143,7 @@ async def dispatch_task(req: DispatchRequest, request: Request, client_id: str =
                 success=False,
                 error=ErrorDetail(**e.to_dict()),
                 trace_id=trace_id,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
 
@@ -160,7 +160,7 @@ async def webhook_callback(req: CallbackRequest, request: Request):
             content=BaseResponse(
                 success=False,
                 error=ErrorDetail(**ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Invalid webhook secret")),
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, task_id=req.task_id)
@@ -184,7 +184,7 @@ async def get_session_history(session_id: str, client_id: str = Depends(get_curr
             content=BaseResponse(
                 success=False,
                 error=ErrorCode.GATEWAY_AUTH_FAILED.to_dict(details="Missing Bearer token"),
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
     trace_id = new_trace_id()
     log = get_logger("gateway").bind(trace_id=trace_id, session_id=session_id)
@@ -228,7 +228,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExc):
             error=ErrorDetail(
                 **ErrorCode.GATEWAY_RATE_LIMITED.to_dict(details="Rate limit exceeded. Retry after 1 minute.")
             ),
-        ).model_dump(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -242,7 +242,7 @@ async def eagent_error_handler(request: Request, exc: EAgentError):
         content=BaseResponse(
             success=False,
             error=ErrorDetail(**exc.to_dict()),
-        ).model_dump(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -256,9 +256,13 @@ async def general_error_handler(request: Request, exc: Exception):
         status_code=500,
         content=BaseResponse(
             success=False,
-            error=ErrorDetail(**ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(details=str(exc))),
+            error=ErrorDetail(
+                **ErrorCode.SYSTEM_INTERNAL_ERROR.to_dict(
+                    details="An internal error occurred. Contact support with trace_id."
+                )
+            ),
             trace_id=trace_id,
-        ).model_dump(),
+        ).model_dump(mode="json"),
     )
 
 
