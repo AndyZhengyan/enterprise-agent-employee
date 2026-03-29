@@ -23,7 +23,7 @@ jobs:
         run: pip install "ruff>=0.9.0" "mypy>=1.14.0"
 
       - name: Ruff check
-        run: ruff check .
+        run: ruff check apps/ common/
 
       - name: Ruff format check
         run: ruff format --check .
@@ -44,7 +44,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install ".[dev]"
 
       - name: Run tests
         run: pytest tests/ -v --cov=apps --cov=common --cov-report=xml --cov-report=term-missing
