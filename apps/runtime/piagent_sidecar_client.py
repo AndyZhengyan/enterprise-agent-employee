@@ -48,6 +48,9 @@ class PiAgentSidecarResult:
     cost: float = 0.0
     duration_ms: int = 0
 
+    def __post_init__(self) -> None:
+        self.tool_calls = [ToolCall(**tc) if isinstance(tc, dict) else tc for tc in self.tool_calls]
+
 
 @dataclass
 class PiAgentSidecarEvent:
@@ -99,7 +102,9 @@ class PiAgentSidecarClient:
         script = self.sidecar_script or self._find_sidecar_script()
         env = {**asyncio.subprocess._MS_PIPE_ENV, "PIAGENT_SOCKET_PATH": str(self.socket_path)}
         self._proc = await asyncio.create_subprocess_exec(
-            "npx", "tsx", str(script),
+            "npx",
+            "tsx",
+            str(script),
             env=env,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
@@ -150,12 +155,15 @@ class PiAgentSidecarClient:
         """发送 invoke 请求，等待 result"""
         reader, writer = await asyncio.open_unix_connection(str(self.socket_path))
         request_id = str(uuid.uuid4())
-        await _write_jsonl(writer, {
-            "type": "invoke",
-            "id": request_id,
-            "session_id": session_id,
-            "message": message,
-        })
+        await _write_jsonl(
+            writer,
+            {
+                "type": "invoke",
+                "id": request_id,
+                "session_id": session_id,
+                "message": message,
+            },
+        )
         try:
             while True:
                 resp = await asyncio.wait_for(_read_jsonl(reader), timeout=self.request_timeout)
@@ -188,12 +196,15 @@ class PiAgentSidecarClient:
         """事件流订阅"""
         reader, writer = await asyncio.open_unix_connection(str(self.socket_path))
         request_id = str(uuid.uuid4())
-        await _write_jsonl(writer, {
-            "type": "invoke",
-            "id": request_id,
-            "session_id": session_id,
-            "message": message,
-        })
+        await _write_jsonl(
+            writer,
+            {
+                "type": "invoke",
+                "id": request_id,
+                "session_id": session_id,
+                "message": message,
+            },
+        )
         try:
             while True:
                 resp = await asyncio.wait_for(_read_jsonl(reader), timeout=self.request_timeout)
@@ -210,5 +221,6 @@ class PiAgentSidecarClient:
     def _find_sidecar_script() -> Path:
         """从 apps.runtime 包路径推断 sidecar 入口"""
         import apps.runtime
+
         runtime_root = Path(apps.runtime.__file__).parent
         return runtime_root / "sidecar" / "src" / "index.ts"
