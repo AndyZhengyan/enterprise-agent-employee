@@ -67,6 +67,7 @@ def test_tool_call_dataclass():
 
 def test_piagent_error_details():
     from apps.runtime.piagent_sidecar_client import PiAgentError
+
     err = PiAgentError("something went wrong", details={"code": 500})
     assert str(err) == "something went wrong"
     assert err.details == {"code": 500}

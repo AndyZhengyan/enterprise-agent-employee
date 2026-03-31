@@ -38,6 +38,7 @@ class OpenClawSettings(BaseSettings):
 
 class PiAgentSidecarConfig(BaseSettings):
     """PiAgent Sidecar 配置"""
+
     enabled: bool = False  # False=subprocess 模式, True=sidecar 模式
     socket_path: str = "/tmp/piagent.sock"
     startup_timeout_ms: int = 10_000

@@ -3,7 +3,6 @@
 测试依据：specs/runtime-spec.md
 """
 
-
 from apps.runtime.models import (
     CancelResponse,
     ExecuteRequest,

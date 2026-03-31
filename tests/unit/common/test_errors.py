@@ -1,6 +1,5 @@
 """common.errors 单元测试"""
 
-
 from common.errors import (
     ConnectorApprovalRequiredError,
     ConnectorExecutionError,
