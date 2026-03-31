@@ -27,10 +27,11 @@ export class SidecarSessionManager {
       }
     }
 
+    const authStorage = AuthStorage.create();
     const { session } = await createAgentSession({
       sessionManager: SessionManager.inMemory(),
-      authStorage: AuthStorage.create(),
-      modelRegistry: ModelRegistry.inMemory(AuthStorage.create()),
+      authStorage,
+      modelRegistry: ModelRegistry.inMemory(authStorage),
     });
 
     if (sessionId) {

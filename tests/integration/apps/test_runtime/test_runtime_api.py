@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+
 def test_runtime_app_exists_and_responds_to_health():
     """TDD: 验证 Runtime API 存在且能正确响应健康检查。"""
     try:

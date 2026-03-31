@@ -4,11 +4,12 @@
 Plan → Act → Reflect 执行循环
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from apps.runtime.executor import RuntimeExecutor, ExecutionState
-from apps.runtime.models import PlanStep, StepStatus
+import pytest
+
+from apps.runtime.executor import ExecutionState, RuntimeExecutor
+from apps.runtime.models import PlanStep
 
 
 class TestRuntimeExecutor:

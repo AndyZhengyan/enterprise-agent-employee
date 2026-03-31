@@ -1,7 +1,13 @@
 // apps/runtime/sidecar/src/index.ts
 import { createServer, type Socket } from "node:net";
 import { existsSync, unlinkSync } from "node:fs";
-import { parseMessage, serializeMessage, type InboundMessage, type PiEvent } from "./protocol.js";
+import {
+  parseMessage,
+  serializeMessage,
+  type InboundMessage,
+  type PiEvent,
+  type InvokeRequest,
+} from "./protocol.js";
 import { SidecarSessionManager } from "./session-manager.js";
 
 const SOCKET_PATH = process.env.PIAGENT_SOCKET_PATH ?? "/tmp/piagent.sock";
@@ -10,25 +16,40 @@ const startTime = Date.now();
 
 async function handleInvoke(
   socket: Socket,
-  requestId: string,
-  sessionId: string | undefined,
-  message: string,
-  _thinkingLevel?: string
+  request: InvokeRequest
 ) {
+  const { id: requestId, session_id: sessionId, message } = request;
+
   try {
     const session = await sessionManager.getOrCreate(sessionId);
 
-    for await (const event of session.prompt(message) as unknown as AsyncIterable<PiEvent>) {
+    // session.agent.subscribe() takes a synchronous/async listener.
+    // It returns an unsubscribe function.
+    // Events are pushed synchronously from within prompt().
+    // We collect them and stream to the socket.
+    let agentEndReceived = false;
+    const unsubscribe = session.agent.subscribe(async (event: PiEvent) => {
       const outbound = {
         type: "event" as const,
         request_id: requestId,
         event: JSON.parse(JSON.stringify(event)),
       };
       socket.write(serializeMessage(outbound));
+      if ((event as PiEvent & { type: string }).type === "agent_end") {
+        agentEndReceived = true;
+      }
+    });
+
+    try {
+      await session.prompt(message);
+    } finally {
+      unsubscribe();
     }
 
-    // 从 session.state.messages 取最后一个 assistant 消息
-    const messages = (session as unknown as { state: { messages: Array<{role: string; content: string}> } }).state?.messages ?? [];
+    // Extract answer from session state after prompt resolves
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const state = (session as any).state as { messages: Array<{ role: string; content: string }> } | undefined;
+    const messages = state?.messages ?? [];
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     const answer = lastAssistant?.content ?? "";
 
@@ -60,10 +81,10 @@ async function main() {
     unlinkSync(SOCKET_PATH);
   }
 
-  const server = createServer((socket) => {
+  const server = createServer((socket: Socket) => {
     let buffer = "";
 
-    socket.on("data", async (chunk) => {
+    socket.on("data", async (chunk: Buffer) => {
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -84,7 +105,7 @@ async function main() {
           }
 
           if (msg.type === "invoke") {
-            await handleInvoke(socket, msg.id, msg.session_id, msg.message, msg.thinking_level);
+            await handleInvoke(socket, msg);
           }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -93,7 +114,7 @@ async function main() {
       }
     });
 
-    socket.on("error", (err) => {
+    socket.on("error", (err: Error) => {
       console.error("Socket error:", err.message);
     });
   });

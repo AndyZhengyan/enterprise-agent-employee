@@ -1,7 +1,8 @@
-import pytest
-from fastapi.testclient import TestClient
-from apps.gateway.main import app
 from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from apps.gateway.main import app
 
 client = TestClient(app)
 

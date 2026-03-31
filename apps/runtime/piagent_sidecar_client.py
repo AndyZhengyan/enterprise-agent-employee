@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -100,10 +101,15 @@ class PiAgentSidecarClient:
         if self._proc is not None:
             return
         script = self.sidecar_script or self._find_sidecar_script()
-        env = {**asyncio.subprocess._MS_PIPE_ENV, "PIAGENT_SOCKET_PATH": str(self.socket_path)}
+        # script = .../sidecar/src/index.ts
+        # sidecar_root = script.parent.parent = .../sidecar/  (always absolute)
+        sidecar_root = script.parent.parent
+        tsx_path = sidecar_root / "node_modules" / ".bin" / "tsx"
+        if not tsx_path.exists():
+            raise PiAgentError(f"tsx not found at {tsx_path}")
+        env = {**os.environ, "PIAGENT_SOCKET_PATH": str(self.socket_path)}
         self._proc = await asyncio.create_subprocess_exec(
-            "npx",
-            "tsx",
+            str(tsx_path),
             str(script),
             env=env,
             stdout=asyncio.subprocess.DEVNULL,

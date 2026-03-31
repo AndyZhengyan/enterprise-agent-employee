@@ -4,8 +4,9 @@
 本地手动验证用，CI 默认跳过。
 """
 
-import pytest
 from datetime import date
+
+import pytest
 
 from apps.runtime.piagent_client import PiAgentClient
 

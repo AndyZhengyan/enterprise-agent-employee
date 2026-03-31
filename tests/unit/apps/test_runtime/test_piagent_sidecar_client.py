@@ -1,9 +1,9 @@
-import pytest
 from pathlib import Path
+
 from apps.runtime.piagent_sidecar_client import (
     PiAgentSidecarClient,
-    PiAgentSidecarResult,
     PiAgentSidecarEvent,
+    PiAgentSidecarResult,
     ToolCall,
 )
 
