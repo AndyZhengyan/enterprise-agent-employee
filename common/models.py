@@ -14,6 +14,7 @@ def _utc_now() -> datetime:
     """Return current UTC time as timezone-aware datetime."""
     return datetime.now(timezone.utc)
 
+
 # ============== 枚举定义 ==============
 
 
@@ -102,6 +103,7 @@ class TaskContext(BaseModel):
 
 class TaskInput(BaseModel):
     """任务输入"""
+
     query: str = Field(..., max_length=10000)
     params: Dict[str, Any] = Field(default_factory=dict)
 

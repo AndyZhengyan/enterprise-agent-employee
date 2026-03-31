@@ -64,6 +64,7 @@ class StepStatus(str, Enum):
 
 class TaskInput(BaseModel):
     """任务输入"""
+
     query: str = Field(..., max_length=10000)
     params: Dict[str, Any] = Field(default_factory=dict)
 

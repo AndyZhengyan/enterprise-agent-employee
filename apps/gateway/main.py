@@ -81,6 +81,7 @@ class DispatchRequest(BaseModel):
         if v is None:
             return v
         import urllib.parse
+
         parsed = urllib.parse.urlparse(v)
         if parsed.scheme not in ("http", "https"):
             raise ValueError("callback_url must use http or https scheme")
@@ -98,6 +99,7 @@ class DispatchResponse(BaseModel):
 
 class CallbackRequest(BaseModel):
     """Webhook 回调请求"""
+
     event_type: Literal["task.completed", "task.failed"]
     task_id: str
     result: Optional[Dict[str, Any]] = None

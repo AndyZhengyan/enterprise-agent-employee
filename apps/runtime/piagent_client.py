@@ -215,6 +215,7 @@ class PiAgentClient:
     def _get_token(cls) -> str:
         """从环境变量或配置文件读取 Gateway token"""
         import os
+
         token = os.environ.get("OPENCLAW_GATEWAY_TOKEN")
         if token:
             return token
@@ -228,8 +229,7 @@ class PiAgentClient:
                 return token
         except FileNotFoundError:
             raise PiAgentError(
-                f"OpenClaw config not found at {config_path}. "
-                "Run `openclaw gateway init` to configure.",
+                f"OpenClaw config not found at {config_path}. Run `openclaw gateway init` to configure.",
                 agent_id=None,
             )
         except json.JSONDecodeError as e:
@@ -337,12 +337,17 @@ class PiAgentClient:
     def _build_cli_args(self, message: str, session_id: Optional[str] = None) -> List[str]:
         """构建 openclaw agent CLI 参数"""
         args = [
-            "openclaw", "agent",
-            "--agent", self.agent_id,
-            "--message", message,
+            "openclaw",
+            "agent",
+            "--agent",
+            self.agent_id,
+            "--message",
+            message,
             "--json",
-            "--thinking", self.thinking_level,
-            "--timeout", str(self.timeout_seconds),
+            "--thinking",
+            self.thinking_level,
+            "--timeout",
+            str(self.timeout_seconds),
         ]
         if session_id:
             args.extend(["--session-id", session_id])
@@ -550,6 +555,7 @@ class PiAgentClient:
 
 # ============== 会话管理器 ==============
 
+
 class PiAgentSession:
     """
     PiAgent 会话。
@@ -562,6 +568,7 @@ class PiAgentSession:
         self.session_id = session_id or self._new_session_id()
         self.call_count = 0
         self.created_at = datetime.now(timezone.utc)
+
     @staticmethod
     def _new_session_id() -> str:
         """生成新的会话 ID"""
