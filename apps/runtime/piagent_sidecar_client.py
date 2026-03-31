@@ -108,6 +108,12 @@ class PiAgentSidecarClient:
         if not tsx_path.exists():
             raise PiAgentError(f"tsx not found at {tsx_path}")
         env = {**os.environ, "PIAGENT_SOCKET_PATH": str(self.socket_path)}
+        # minimax-cn provider reads MINIMAX_CN_API_KEY; map GETNOTE_API_KEY if present
+        if "MINIMAX_CN_API_KEY" not in env:
+            if "GETNOTE_API_KEY" in env:
+                env["MINIMAX_CN_API_KEY"] = env["GETNOTE_API_KEY"]
+            elif "MINIMAX_API_KEY" in env:
+                env["MINIMAX_CN_API_KEY"] = env["MINIMAX_API_KEY"]
         self._proc = await asyncio.create_subprocess_exec(
             str(tsx_path),
             str(script),

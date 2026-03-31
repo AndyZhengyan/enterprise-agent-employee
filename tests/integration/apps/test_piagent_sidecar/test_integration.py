@@ -41,6 +41,9 @@ def _check_api_key_available() -> bool:
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "ANTHROPIC_OAUTH_TOKEN",
+        "MINIMAX_API_KEY",
+        "MINIMAX_CN_API_KEY",
+        "GETNOTE_API_KEY",
         "GEMINI_API_KEY",
         "GROQ_API_KEY",
     ]

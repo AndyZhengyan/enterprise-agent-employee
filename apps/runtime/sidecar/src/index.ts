@@ -14,6 +14,11 @@ const SOCKET_PATH = process.env.PIAGENT_SOCKET_PATH ?? "/tmp/piagent.sock";
 const sessionManager = new SidecarSessionManager();
 const startTime = Date.now();
 
+interface AssistantMessage {
+  role: string;
+  content: Array<{ type: string; text?: string }>;
+}
+
 async function handleInvoke(
   socket: Socket,
   request: InvokeRequest
@@ -23,21 +28,23 @@ async function handleInvoke(
   try {
     const session = await sessionManager.getOrCreate(sessionId);
 
-    // session.agent.subscribe() takes a synchronous/async listener.
-    // It returns an unsubscribe function.
-    // Events are pushed synchronously from within prompt().
-    // We collect them and stream to the socket.
-    let agentEndReceived = false;
+    // Accumulate assistant text from streaming text_delta events.
+    // Some providers (e.g. MiniMax) send text via deltas without populating
+    // the final message.content array, so we must gather deltas directly.
+    let accumulatedText = "";
+
     const unsubscribe = session.agent.subscribe(async (event: PiEvent) => {
+      const ev = event as { type: string; assistantMessageEvent?: { type: string; delta?: string } };
+      if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_delta") {
+        accumulatedText += ev.assistantMessageEvent.delta ?? "";
+      }
+
       const outbound = {
         type: "event" as const,
         request_id: requestId,
         event: JSON.parse(JSON.stringify(event)),
       };
       socket.write(serializeMessage(outbound));
-      if ((event as PiEvent & { type: string }).type === "agent_end") {
-        agentEndReceived = true;
-      }
     });
 
     try {
@@ -46,12 +53,21 @@ async function handleInvoke(
       unsubscribe();
     }
 
-    // Extract answer from session state after prompt resolves
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const state = (session as any).state as { messages: Array<{ role: string; content: string }> } | undefined;
-    const messages = state?.messages ?? [];
-    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    const answer = lastAssistant?.content ?? "";
+    // Fall back to session.state.messages if no delta text was accumulated.
+    // message.content is Array<{type: string; text?: string}>, not plain string.
+    let answer = accumulatedText;
+    if (!answer) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const state = (session as any).state as { messages: AssistantMessage[] } | undefined;
+      const messages = state?.messages ?? [];
+      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+      if (lastAssistant?.content) {
+        answer = lastAssistant.content
+          .filter((c) => c.type === "text")
+          .map((c) => c.text ?? "")
+          .join("");
+      }
+    }
 
     socket.write(serializeMessage({
       type: "result" as const,

@@ -6,8 +6,12 @@ import {
   ModelRegistry,
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
+import { getModel } from "@mariozechner/pi-ai";
 
 const MAX_SESSIONS = 100;
+
+// Default to MiniMax China region (api.minimaxi.com) for best compatibility.
+const DEFAULT_MODEL = getModel("minimax-cn", "MiniMax-M2.7");
 
 interface PooledSession {
   session: AgentSession;
@@ -32,6 +36,7 @@ export class SidecarSessionManager {
       sessionManager: SessionManager.inMemory(),
       authStorage,
       modelRegistry: ModelRegistry.inMemory(authStorage),
+      model: DEFAULT_MODEL,
     });
 
     if (sessionId) {
