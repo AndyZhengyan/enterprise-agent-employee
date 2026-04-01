@@ -1,4 +1,5 @@
 """SkillHub errors — 5xxx codes from common/errors."""
+
 from __future__ import annotations
 
 from typing import Any, Optional

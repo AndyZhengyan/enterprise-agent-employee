@@ -1,4 +1,5 @@
 """SkillHub FastAPI service — port 8004."""
+
 from __future__ import annotations
 
 import time

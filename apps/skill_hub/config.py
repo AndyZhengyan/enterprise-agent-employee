@@ -1,4 +1,5 @@
 """SkillHub configuration."""
+
 from __future__ import annotations
 
 from common.config import BaseSettings

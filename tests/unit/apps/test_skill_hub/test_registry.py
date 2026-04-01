@@ -1,4 +1,5 @@
 """SkillHub registry and lifecycle tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -15,6 +16,7 @@ from apps.skill_hub.registry import (
 
 def _reset():
     import apps.skill_hub.registry as reg
+
     reg._registry.clear()
 
 

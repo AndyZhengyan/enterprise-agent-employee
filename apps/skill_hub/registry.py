@@ -1,4 +1,5 @@
 """SkillHub registry — manages skill lifecycle and discovery."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
