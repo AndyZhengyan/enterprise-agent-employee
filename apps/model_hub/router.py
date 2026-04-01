@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 from apps.model_hub.models import TaskType
+from common.tracing import get_logger
 
-log = logging.getLogger("model_hub.router")
+log = get_logger("model_hub.router")
 
 # (provider_name, model_id)
 ProviderModel = tuple[str, str]

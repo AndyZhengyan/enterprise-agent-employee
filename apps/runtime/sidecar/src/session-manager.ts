@@ -4,7 +4,6 @@ import {
   type AgentSession,
   AuthStorage,
   ModelRegistry,
-  SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
 
@@ -33,9 +32,8 @@ export class SidecarSessionManager {
 
     const authStorage = AuthStorage.create();
     const { session } = await createAgentSession({
-      sessionManager: SessionManager.inMemory(),
       authStorage,
-      modelRegistry: ModelRegistry.inMemory(authStorage),
+      modelRegistry: new ModelRegistry(authStorage),
       model: model ?? DEFAULT_MODEL,
     });
 
