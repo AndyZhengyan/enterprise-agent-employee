@@ -12,6 +12,28 @@ from fastapi import Depends, FastAPI, HTTPException
 from apps.governance import __version__
 from apps.governance.abac import _auto_seed as abac_seed
 from apps.governance.abac import get_policy, list_policies, register_policy
+from apps.governance.approval.engine import (
+    _auto_seed as approval_seed,
+)
+from apps.governance.approval.engine import (
+    check_timeouts,
+    list_workflows,
+    process_decision,
+    register_workflow,
+    submit_approval_request,
+)
+from apps.governance.approval.engine import (
+    get_request as approval_get_request,
+)
+from apps.governance.approval.engine import (
+    list_requests as approval_list_requests,
+)
+from apps.governance.approval.models import (
+    ApprovalDecisionRequest,
+    ApprovalListResponse,
+    ApprovalResponse,
+    ApprovalWorkflow,
+)
 from apps.governance.config import GovernanceSettings
 from apps.governance.middleware import require_admin, require_platform_admin, require_tenant_admin
 from apps.governance.models import (
@@ -50,6 +72,7 @@ settings = GovernanceSettings()
 async def lifespan(app: FastAPI):
     rbac_seed()
     abac_seed()
+    approval_seed()
     log.info(
         "governance.started",
         port=settings.port,
@@ -228,3 +251,91 @@ async def check_permission(req: PermissionCheckRequest) -> PermissionCheckRespon
         reason=final_reason,
         matched_policy=matched,
     )
+
+
+# ============== Approval Workflows ==============
+
+
+@app.post("/governance/approvals/workflows", status_code=201, tags=["审批流"])
+async def create_approval_workflow(
+    workflow: ApprovalWorkflow,
+    _: AuthContext = Depends(require_tenant_admin),
+) -> ApprovalWorkflow:
+    """Register a new approval workflow."""
+    register_workflow(workflow)
+    return workflow
+
+
+@app.get("/governance/approvals/workflows", tags=["审批流"])
+async def list_approval_workflows() -> list[ApprovalWorkflow]:
+    """List all available approval workflows."""
+    return list_workflows()
+
+
+@app.post("/governance/approvals/submit", status_code=201, tags=["审批流"])
+async def submit_approval(
+    workflow_id: str,
+    requester_id: str,
+    tenant_id: str,
+    resource_type: str,
+    resource_id: str,
+    attributes: dict,
+    resource_summary: str = "",
+) -> dict:
+    """Submit an approval request for a workflow."""
+    result = submit_approval_request(
+        workflow_id=workflow_id,
+        requester_id=requester_id,
+        tenant_id=tenant_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        attributes=attributes,
+        resource_summary=resource_summary,
+    )
+    if result is None:
+        # No matching step — no approval needed
+        return {"request_id": None, "status": "no_approval_required"}
+    return result.model_dump(mode="json")
+
+
+@app.get("/governance/approvals/requests", response_model=ApprovalListResponse, tags=["审批流"])
+async def list_approval_requests(
+    status: str | None = None,
+    requester_id: str | None = None,
+    tenant_id: str | None = None,
+) -> ApprovalListResponse:
+    """List approval requests with optional filters."""
+    from apps.governance.approval.models import ApprovalStatus
+
+    status_filter = ApprovalStatus(status) if status else None
+    requests = approval_list_requests(
+        status=status_filter,
+        requester_id=requester_id,
+        tenant_id=tenant_id,
+    )
+    return ApprovalListResponse(requests=requests, total=len(requests))
+
+
+@app.get("/governance/approvals/requests/{request_id}", tags=["审批流"])
+async def get_approval_request(request_id: str) -> dict:
+    """Get a specific approval request."""
+    req = approval_get_request(request_id)
+    if req is None:
+        raise HTTPException(status_code=404, detail=f"Approval request '{request_id}' not found")
+    return req.model_dump(mode="json")
+
+
+@app.post("/governance/approvals/decide", response_model=ApprovalResponse, tags=["审批流"])
+async def decide_approval(req: ApprovalDecisionRequest) -> ApprovalResponse:
+    """Approve or reject an approval request."""
+    try:
+        return process_decision(req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/governance/approvals/check-timeouts", tags=["审批流"])
+async def check_approval_timeouts() -> dict:
+    """Check for timed-out approvals and escalate them. Returns escalated request IDs."""
+    escalated = check_timeouts()
+    return {"escalated": [r.request_id for r in escalated], "count": len(escalated)}
