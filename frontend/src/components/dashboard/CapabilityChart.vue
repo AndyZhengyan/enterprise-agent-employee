@@ -71,7 +71,7 @@ function barColor(index) {
   flex-direction: column;
   gap: 12px;
   flex: 1;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .capability-item {

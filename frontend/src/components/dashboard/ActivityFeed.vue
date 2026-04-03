@@ -64,6 +64,20 @@ function relativeTime(iso) {
   border: 1px solid var(--border-subtle);
   padding: 16px 18px;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.feed-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: 320px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
 }
 
 .feed-title {
@@ -73,14 +87,7 @@ function relativeTime(iso) {
   text-transform: uppercase;
   color: var(--text-disabled);
   margin-bottom: 14px;
-}
-
-.feed-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
+  flex-shrink: 0;
 }
 
 .feed-item {
