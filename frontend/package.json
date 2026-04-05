@@ -19,7 +19,10 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@vitejs/plugin-vue": "^6.0.5",
+    "playwright": "^1.49.0",
+    "typescript": "^5.7.0",
     "vite": "^8.0.1"
   }
 }
