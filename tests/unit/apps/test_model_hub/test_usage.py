@@ -1,4 +1,5 @@
 """ModelHub usage tracker tests."""
+
 from __future__ import annotations
 
 import threading
@@ -16,8 +17,17 @@ class TestUsageTracker:
     def test_record_accumulates_tokens(self):
         """record() accumulates tokens and cost for the same (employee, date) key."""
         tracker = UsageTracker()
-        tracker.record("emp-1", prompt_tokens=100, completion_tokens=50, cost_usd=0.01, provider="minimax-cn", model="MiniMax-M2.7")
-        tracker.record("emp-1", prompt_tokens=200, completion_tokens=100, cost_usd=0.02, provider="minimax-cn", model="MiniMax-M2.7")
+        tracker.record(
+            "emp-1", prompt_tokens=100, completion_tokens=50, cost_usd=0.01, provider="minimax-cn", model="MiniMax-M2.7"
+        )
+        tracker.record(
+            "emp-1",
+            prompt_tokens=200,
+            completion_tokens=100,
+            cost_usd=0.02,
+            provider="minimax-cn",
+            model="MiniMax-M2.7",
+        )
 
         results = tracker.get_usage("emp-1", days=1)
         assert len(results) == 1

@@ -1,4 +1,5 @@
 """KnowledgeHub vector store and search tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -54,8 +55,12 @@ class TestInMemoryVectorStore:
     def test_bm25_search_returns_relevant_results(self):
         """BM25 search for 'vacation' returns the handbook doc."""
         store = InMemoryVectorStore()
-        store.upsert(KnowledgeDocument(id="handbook", title="Employee Handbook", content="Vacation policy: 15 days per year"))
-        store.upsert(KnowledgeDocument(id="payroll", title="Payroll Guide", content="Pay periods are bi-weekly on Fridays"))
+        store.upsert(
+            KnowledgeDocument(id="handbook", title="Employee Handbook", content="Vacation policy: 15 days per year")
+        )
+        store.upsert(
+            KnowledgeDocument(id="payroll", title="Payroll Guide", content="Pay periods are bi-weekly on Fridays")
+        )
 
         results = store.search(query_text="vacation days policy", top_k=3)
         assert len(results) >= 1
@@ -66,7 +71,9 @@ class TestInMemoryVectorStore:
     def test_bm25_search_ranked_by_score(self):
         """Results are ordered by descending BM25 score."""
         store = InMemoryVectorStore()
-        store.upsert(KnowledgeDocument(id="exact", title="Python Guide", content="Python programming language tutorial"))
+        store.upsert(
+            KnowledgeDocument(id="exact", title="Python Guide", content="Python programming language tutorial")
+        )
         store.upsert(KnowledgeDocument(id="partial", title="Intro", content="Learn about Python basics"))
         store.upsert(KnowledgeDocument(id="unrelated", title="Cooking", content="How to bake a cake"))
 

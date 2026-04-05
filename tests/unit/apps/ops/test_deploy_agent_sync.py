@@ -10,8 +10,10 @@ def _init_test_db(tmp_path, monkeypatch):
     monkeypatch.setattr("apps.ops.db.DB_PATH", str(tmp_path / "ops.db"))
     # Force DB_PATH recompute by reloading the module-level variable
     from apps.ops import db as db_module
+
     db_module.DB_PATH = str(tmp_path / "ops.db")
     from apps.ops.db import get_db, init_db
+
     init_db()
     conn = get_db()
     conn.close()
@@ -33,15 +35,19 @@ def test_deploy_creates_openclaw_agent(tmp_path, monkeypatch):
     _init_test_db(tmp_path, monkeypatch)
 
     from apps.ops.main import app
+
     client = TestClient(app)
 
-    resp = client.post("/api/onboarding/deploy", json={
-        "role": "客服专员",
-        "alias": "小美",
-        "department": "客服部",
-        "scaling": {"minReplicas": 1, "maxReplicas": 3, "targetLoad": 60},
-        "soul": {"description": "热情友好", "communication_style": "亲切简洁"},
-    })
+    resp = client.post(
+        "/api/onboarding/deploy",
+        json={
+            "role": "客服专员",
+            "alias": "小美",
+            "department": "客服部",
+            "scaling": {"minReplicas": 1, "maxReplicas": 3, "targetLoad": 60},
+            "soul": {"description": "热情友好", "communication_style": "亲切简洁"},
+        },
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"].startswith("av-")
@@ -69,16 +75,20 @@ def test_delete_removes_openclaw_agent(tmp_path, monkeypatch):
     _init_test_db(tmp_path, monkeypatch)
 
     from apps.ops.main import app
+
     client = TestClient(app)
 
     # Deploy first
-    resp = client.post("/api/onboarding/deploy", json={
-        "role": "测试",
-        "alias": "Tester",
-        "department": "测试部",
-        "scaling": {"minReplicas": 1, "maxReplicas": 3, "targetLoad": 60},
-        "soul": {"description": "test", "communication_style": "test"},
-    })
+    resp = client.post(
+        "/api/onboarding/deploy",
+        json={
+            "role": "测试",
+            "alias": "Tester",
+            "department": "测试部",
+            "scaling": {"minReplicas": 1, "maxReplicas": 3, "targetLoad": 60},
+            "soul": {"description": "test", "communication_style": "test"},
+        },
+    )
     assert resp.status_code == 200
     bp_id = resp.json()["id"]
     agent_dir = tmp_path / "agents" / bp_id
@@ -103,15 +113,19 @@ def test_deploy_soul_md_includes_department(tmp_path, monkeypatch):
     _init_test_db(tmp_path, monkeypatch)
 
     from apps.ops.main import app
+
     client = TestClient(app)
 
-    resp = client.post("/api/onboarding/deploy", json={
-        "role": "数据分析师",
-        "alias": "小龙",
-        "department": "商业智能部",
-        "scaling": {"minReplicas": 1, "maxReplicas": 5, "targetLoad": 60},
-        "soul": {"description": "精准分析", "communication_style": "数据驱动"},
-    })
+    resp = client.post(
+        "/api/onboarding/deploy",
+        json={
+            "role": "数据分析师",
+            "alias": "小龙",
+            "department": "商业智能部",
+            "scaling": {"minReplicas": 1, "maxReplicas": 5, "targetLoad": 60},
+            "soul": {"description": "精准分析", "communication_style": "数据驱动"},
+        },
+    )
     assert resp.status_code == 200
     bp_id = resp.json()["id"]
 

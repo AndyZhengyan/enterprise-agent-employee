@@ -11,8 +11,10 @@ def _init_test_db(tmp_path, monkeypatch):
     monkeypatch.setenv("OPS_DB_PATH", str(tmp_path / "ops.db"))
     monkeypatch.setenv("PIAGENT_CLI_STUB", "true")
     from apps.ops import db as db_module
+
     db_module.DB_PATH = str(tmp_path / "ops.db")
     from apps.ops.db import get_db, init_db
+
     init_db()
     conn = get_db()
     conn.close()
@@ -23,6 +25,7 @@ def test_execute_uses_blueprint_id_param(tmp_path, monkeypatch):
     _init_test_db(tmp_path, monkeypatch)
 
     from apps.ops.main import app
+
     client = TestClient(app)
 
     with patch("apps.ops.main._run_piagent") as mock_run:
@@ -39,17 +42,18 @@ def test_execute_uses_blueprint_id_param(tmp_path, monkeypatch):
                 }
             },
         }
-        resp = client.post("/api/ops/execute", json={
-            "message": "test message",
-            "blueprint_id": "av-admin-001",
-        })
+        resp = client.post(
+            "/api/ops/execute",
+            json={
+                "message": "test message",
+                "blueprint_id": "av-admin-001",
+            },
+        )
         assert resp.status_code == 200
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         # Second positional arg is agent_id
-        assert call_args[0][1] == "av-admin-001", (
-            f"Expected agent_id='av-admin-001', got {call_args[0][1]!r}"
-        )
+        assert call_args[0][1] == "av-admin-001", f"Expected agent_id='av-admin-001', got {call_args[0][1]!r}"
 
 
 def test_execute_defaults_to_av_swe_when_no_blueprint_id(tmp_path, monkeypatch):
@@ -57,6 +61,7 @@ def test_execute_defaults_to_av_swe_when_no_blueprint_id(tmp_path, monkeypatch):
     _init_test_db(tmp_path, monkeypatch)
 
     from apps.ops.main import app
+
     client = TestClient(app)
 
     with patch("apps.ops.main._run_piagent") as mock_run:
@@ -73,16 +78,17 @@ def test_execute_defaults_to_av_swe_when_no_blueprint_id(tmp_path, monkeypatch):
                 }
             },
         }
-        resp = client.post("/api/ops/execute", json={
-            "message": "test message",
-        })
+        resp = client.post(
+            "/api/ops/execute",
+            json={
+                "message": "test message",
+            },
+        )
         assert resp.status_code == 200
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         # agent_id defaults to "av-swe-001" when no blueprint_id in request
-        assert call_args[0][1] == "av-swe-001", (
-            f"Expected agent_id='av-swe-001', got {call_args[0][1]!r}"
-        )
+        assert call_args[0][1] == "av-swe-001", f"Expected agent_id='av-swe-001', got {call_args[0][1]!r}"
 
 
 def test_demo_scheduler_uses_blueprint_id(tmp_path, monkeypatch):
@@ -132,9 +138,5 @@ def test_demo_scheduler_uses_blueprint_id(tmp_path, monkeypatch):
 
     assert len(captured_agent_ids) >= 1, "Scheduler never called _run_piagent"
     for agent_id in captured_agent_ids[:3]:
-        assert agent_id in seeded_bp_ids, (
-            f"Expected one of {seeded_bp_ids}, got {agent_id!r}"
-        )
-        assert agent_id != "chat", (
-            f"Scheduler should not use hardcoded 'chat', got {agent_id!r}"
-        )
+        assert agent_id in seeded_bp_ids, f"Expected one of {seeded_bp_ids}, got {agent_id!r}"
+        assert agent_id != "chat", f"Scheduler should not use hardcoded 'chat', got {agent_id!r}"

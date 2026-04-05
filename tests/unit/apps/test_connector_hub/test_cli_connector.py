@@ -1,4 +1,5 @@
 """ConnectorHub CLI connector unit tests."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -64,9 +65,7 @@ class TestCliConnector:
         mock_result.summary = "Done"
         mock_result.text = "Hello!"
 
-        with patch(
-            "apps.runtime.piagent_client.PiAgentClient"
-        ) as MockClient:
+        with patch("apps.runtime.piagent_client.PiAgentClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.invoke_async.return_value = mock_result
             MockClient.return_value = mock_instance
@@ -87,9 +86,7 @@ class TestCliConnector:
 
         import asyncio
 
-        with patch(
-            "apps.runtime.piagent_client.PiAgentClient"
-        ) as MockClient:
+        with patch("apps.runtime.piagent_client.PiAgentClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.invoke_async.side_effect = asyncio.TimeoutError()
             MockClient.return_value = mock_instance

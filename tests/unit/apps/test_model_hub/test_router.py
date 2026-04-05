@@ -37,17 +37,21 @@ class TestModelRouter:
 
     def test_unavailable_provider_filtered_out(self):
         """Providers not in available_providers are filtered."""
-        router = ModelRouter(available_providers={
-            "minimax-cn": ["MiniMax-M2.7"],
-        })
+        router = ModelRouter(
+            available_providers={
+                "minimax-cn": ["MiniMax-M2.7"],
+            }
+        )
         result = router.route(TaskType.PLANNING)
         assert result == [("minimax-cn", "MiniMax-M2.7")]
 
     def test_registration_updates_available_providers(self):
         """register_provider adds provider to available list."""
-        router = ModelRouter(available_providers={
-            "minimax-cn": ["MiniMax-M2.7"],
-        })
+        router = ModelRouter(
+            available_providers={
+                "minimax-cn": ["MiniMax-M2.7"],
+            }
+        )
         router.register_provider("anthropic", ["claude-opus-4-5-5", "claude-sonnet-4-5"])
         result = router.route(TaskType.PLANNING)
         assert result == [

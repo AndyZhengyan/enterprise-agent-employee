@@ -1,4 +1,5 @@
 """ModelHub FastAPI main tests."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch

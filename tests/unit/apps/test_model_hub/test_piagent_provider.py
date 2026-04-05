@@ -1,4 +1,5 @@
 """PiAgentProvider unit tests (mocked httpx)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -86,6 +87,7 @@ class TestPiAgentProvider:
         with patch.object(provider, "_client", AsyncMock()) as mock_client:
             mock_client.post.side_effect = httpx.TimeoutException("timed out")
             from apps.model_hub.errors import ModelTimeoutError
+
             with pytest.raises(ModelTimeoutError):
                 await provider.chat(messages=[], model="MiniMax-M2.7", timeout_seconds=5)
 
@@ -97,6 +99,7 @@ class TestPiAgentProvider:
         with patch.object(provider, "_client", AsyncMock()) as mock_client:
             mock_client.post.return_value = mock_response
             from apps.model_hub.errors import ModelProviderError
+
             with pytest.raises(ModelProviderError):
                 await provider.chat(messages=[], model="MiniMax-M2.7")
 
