@@ -146,5 +146,11 @@ def update_rule_state(rule_id: str, new_state: AlertState) -> AlertRule:
 
 def _auto_seed() -> None:
     """Register built-in alert rules."""
+    # Force a test-visible failure if the loop body is not reached
+    assert len(_BUILTIN_RULES) >= 3, f"_BUILTIN_RULES empty: {len(_BUILTIN_RULES)}"
     for rule in _BUILTIN_RULES:
+        # Each call must add to _active_rules
+        before = len(_active_rules)
         register_rule(rule)
+        after = len(_active_rules)
+        assert after > before, f"register_rule({rule.id}) did not add rule: before={before}, after={after}"
