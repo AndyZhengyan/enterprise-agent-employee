@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import httpx
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
@@ -108,10 +109,33 @@ class CallbackRequest(BaseModel):
 # ============== 辅助函数 ==============
 
 
-async def _dispatch_to_runtime(request: DispatchRequest, trace_id: str) -> DispatchResponse:
+RUNTIME_URL = os.environ.get("RUNTIME_URL", "http://localhost:8001")
+
+
+async def _dispatch_to_runtime(req: DispatchRequest, trace_id: str) -> DispatchResponse:
     """将请求分发到 Runtime"""
-    # TODO: 实现 Runtime 调用
     task_id = f"task-{trace_id[-12:]}"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{RUNTIME_URL}/runtime/execute",
+                json={
+                    "employee_id": req.employee_id,
+                    "task_id": task_id,
+                    "input": {"query": req.content},
+                    "context": req.context,
+                },
+            )
+            if response.status_code == 200:
+                body = response.json()
+                return DispatchResponse(
+                    task_id=body.get("task_id", task_id),
+                    status=TaskStatus(body.get("status", "queued")),
+                    estimated_duration_ms=body.get("duration_ms", 5000),
+                )
+    except (httpx.ConnectError, httpx.TimeoutException) as e:
+        log.warning("runtime_unreachable", runtime_url=RUNTIME_URL, error=str(e))
+
     return DispatchResponse(
         task_id=task_id,
         status=TaskStatus.QUEUED,

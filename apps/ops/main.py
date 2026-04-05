@@ -6,8 +6,10 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+from common.tracing import get_logger as _ops_get_logger
 
 from .db import (
     get_db,
@@ -15,6 +17,22 @@ from .db import (
     init_db,
     record_execution,
 )
+
+OPS_API_KEY = os.environ.get("OPS_API_KEY", "")
+
+
+def verify_api_key(x_api_key: str = Header(default="")):
+    if not OPS_API_KEY:
+        # If no OPS_API_KEY is set, allow access (dev mode)
+        return True
+    if x_api_key != OPS_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return True
+
+
+CORS_ORIGINS = os.environ.get(
+    "OPS_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+).split(",")
 
 app = FastAPI(
     title="AvatarOS Ops API",
@@ -24,7 +42,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +71,7 @@ DEMO_BLUEPRINTS = [
 ]
 
 _runner_active = False
+_log = _ops_get_logger("ops")
 
 
 def _get_gateway_token() -> str:
@@ -134,10 +153,10 @@ def _run_piagent(message: str, agent_id: str = "chat", timeout: int = 60) -> Dic
 
 def _demo_scheduler():
     """Background loop: run demo tasks every 30 seconds."""
-    import sys
     global _runner_active
     idx = 0
-    print("Scheduler thread started", flush=True, file=sys.stderr)
+    log = _ops_get_logger("ops_scheduler")
+    log.info("scheduler_thread_started")
     while _runner_active:
         bp_id, alias, role, dept = DEMO_BLUEPRINTS[idx % len(DEMO_BLUEPRINTS)]
         message = DEMO_MESSAGES[idx % len(DEMO_MESSAGES)]
@@ -170,14 +189,12 @@ def _demo_scheduler():
                     summary=summary[:200] if summary else "",
                 )
                 tok = token_input + token_completion
-                print(f"[scheduler] Task {idx}: {alias} | {run_id[:8]} | {tok}tok | {exec_id}",
-                      flush=True, file=sys.stderr)
+                log.info("demo_task_completed", idx=idx, alias=alias, tokens=tok, exec_id=exec_id, run_id=run_id[:8])
             else:
                 summary_preview = raw.get("summary", "unknown")[:40]
-                print(f"[scheduler] No run_id for task {idx}: {summary_preview}",
-                      flush=True, file=sys.stderr)
+                log.warning("demo_task_no_run_id", idx=idx, summary=summary_preview)
         except Exception as e:
-            print(f"[scheduler] Error on task {idx}: {e}", flush=True, file=sys.stderr)
+            log.error("demo_task_error", idx=idx, error=str(e))
 
         time.sleep(30)
 
@@ -189,20 +206,7 @@ def startup():
     # Start background scheduler in a daemon thread
     global _runner_active
     _runner_active = True
-    import sys
-    # Redirect scheduler stderr to a log file for debugging
-    scheduler_log = open("/tmp/scheduler.log", "w")
-    orig_stderr = sys.stderr
-
-    def wrapped_scheduler():
-        sys.stderr = scheduler_log
-        try:
-            _demo_scheduler()
-        finally:
-            scheduler_log.close()
-            sys.stderr = orig_stderr
-
-    t = threading.Thread(target=wrapped_scheduler, daemon=True)
+    t = threading.Thread(target=_demo_scheduler, daemon=True)
     t.start()
 
 
@@ -352,7 +356,7 @@ class ExecuteRequest:
 
 
 @app.post("/api/ops/execute")
-def execute_task(req: dict):
+def execute_task(req: dict, _: bool = Depends(verify_api_key)):
     """
     Execute a task via PiAgent (openclaw CLI) and record the result.
     Returns the PiAgent execution result plus the internal exec_id.
@@ -415,7 +419,7 @@ def execute_task(req: dict):
 
 
 @app.get("/api/onboarding/blueprints")
-def get_blueprints():
+def get_blueprints(_: bool = Depends(verify_api_key)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id, role, alias, department, versions, capacity FROM blueprints")
@@ -426,7 +430,7 @@ def get_blueprints():
 
 
 @app.post("/api/onboarding/deploy")
-def deploy_avatar(req: dict):
+def deploy_avatar(req: dict, _: bool = Depends(verify_api_key)):
     bp_id = f"av-{req['role']}-{int(time.time())}"
     scaling = req["scaling"]
     new_version = {
@@ -463,7 +467,7 @@ def deploy_avatar(req: dict):
 
 
 @app.put("/api/onboarding/blueprints/{bp_id}/traffic")
-def update_traffic(bp_id: str, req: dict):
+def update_traffic(bp_id: str, req: dict, _: bool = Depends(verify_api_key)):
     """更新指定版本的 traffic 权重。"""
     version_idx = req.get("version_index")
     new_traffic = req.get("traffic")
@@ -500,7 +504,7 @@ def update_traffic(bp_id: str, req: dict):
 
 
 @app.put("/api/onboarding/blueprints/{bp_id}/versions/{idx}/deprecate")
-def deprecate_version(bp_id: str, idx: int):
+def deprecate_version(bp_id: str, idx: int, _: bool = Depends(verify_api_key)):
     """将指定版本下线（traffic=0, status=deprecated）。"""
     conn = get_db()
     cur = conn.cursor()
@@ -533,7 +537,7 @@ def deprecate_version(bp_id: str, idx: int):
 
 
 @app.delete("/api/onboarding/blueprints/{bp_id}")
-def delete_blueprint(bp_id: str):
+def delete_blueprint(bp_id: str, _: bool = Depends(verify_api_key)):
     """删除指定 Blueprint。"""
     conn = get_db()
     cur = conn.cursor()
