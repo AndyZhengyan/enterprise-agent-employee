@@ -3,12 +3,15 @@
 <script setup>
 import { ref } from 'vue';
 import { opsApi } from '../../services/api.js';
+import { useOnboarding } from '../../composables/useOnboarding.js';
 
 const props = defineProps({
   blueprint: { type: Object, required: true },
 });
 
 const emit = defineEmits(['deploy-version']);
+
+const { adjustTraffic, deprecateVersion } = useOnboarding();
 
 const STATUS_LABEL = {
   published: '正式上岗',
@@ -58,7 +61,10 @@ function startAdjustTraffic(v, idx) {
   _adjustingTraffic.value = v.traffic;
 }
 
-function confirmTrafficAdjustment(v) {
+async function confirmTrafficAdjustment(v, idx) {
+  if (props.blueprint.id.startsWith('av-')) {
+    await adjustTraffic(props.blueprint.id, idx, _adjustingTraffic.value);
+  }
   v.traffic = _adjustingTraffic.value;
   adjustingIdx.value = null;
 }
@@ -71,7 +77,10 @@ function startDeprecate(idx) {
   deprecatingIdx.value = idx;
 }
 
-function confirmDeprecate(v) {
+async function confirmDeprecate(v, idx) {
+  if (props.blueprint.id.startsWith('av-')) {
+    await deprecateVersion(props.blueprint.id, idx);
+  }
   v.traffic = 0;
   v.status = 'deprecated';
   deprecatingIdx.value = null;
@@ -165,7 +174,7 @@ function closeTaskPanel() {
             class="v-traffic-slider"
           />
           <span class="v-traffic-val">{{ _adjustingTraffic }}%</span>
-          <button class="v-btn v-btn--ok" @click="confirmTrafficAdjustment(v)">✓</button>
+          <button class="v-btn v-btn--ok" @click="confirmTrafficAdjustment(v, $index)">✓</button>
           <button class="v-btn" @click="cancelTrafficAdjustment">✕</button>
         </template>
 
@@ -174,7 +183,7 @@ function closeTaskPanel() {
           <button class="v-btn v-btn--danger" @click="startDeprecate($index)">下线</button>
         </template>
         <template v-else-if="deprecatingIdx === $index">
-          <button class="v-btn v-btn--danger" @click="confirmDeprecate(v)">确认</button>
+          <button class="v-btn v-btn--danger" @click="confirmDeprecate(v, $index)">确认</button>
           <button class="v-btn" @click="deprecatingIdx = null">取消</button>
         </template>
       </div>

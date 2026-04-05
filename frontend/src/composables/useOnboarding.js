@@ -1,11 +1,24 @@
 // frontend/src/composables/useOnboarding.js
 // e-Agent-OS OpCenter — Onboarding Composable
 import { ref } from 'vue';
-import { MOCK_BLUEPRINTS, DEPARTMENTS } from '../mock/blueprints.js';
+import { onboardingApi, DEPARTMENTS } from '../services/api.js';
 
-const blueprints = ref([...MOCK_BLUEPRINTS]);
+const blueprints = ref([]);
 const loading = ref(false);
 const error = ref(null);
+
+async function fetchBlueprints() {
+  loading.value = true;
+  error.value = null;
+  try {
+    const res = await onboardingApi.list();
+    blueprints.value = res.data;
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    loading.value = false;
+  }
+}
 
 function getTotalReplicas(bp) {
   return bp.versions.reduce((sum, v) => sum + v.replicas, 0);
@@ -60,6 +73,17 @@ function adjustTraffic(blueprintId, versionIndex, newTraffic) {
   });
 }
 
+function deprecateVersion(blueprintId, versionIndex) {
+  return onboardingApi.deprecateVersion(blueprintId, versionIndex)
+    .then(res => {
+      const bp = blueprints.value.find(b => b.id === blueprintId);
+      if (bp && res.data) {
+        bp.versions = res.data.versions;
+        bp.capacity = res.data.capacity;
+      }
+    });
+}
+
 function deployNewAvatar({ role, alias, department, scaling }) {
   const id = `av-${role}-${Date.now()}`;
   blueprints.value.push({
@@ -87,11 +111,13 @@ export function useOnboarding() {
     departments: DEPARTMENTS,
     loading,
     error,
+    fetchBlueprints,
     getTotalReplicas,
     getLoad,
     getStatusLabel,
     getStatusDot,
     adjustTraffic,
+    deprecateVersion,
     deployNewAvatar,
   };
 }

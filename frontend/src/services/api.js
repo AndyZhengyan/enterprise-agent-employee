@@ -12,8 +12,9 @@ import {
   MOCK_CAPABILITY_DIST,
   MOCK_ACTIVITY,
 } from '../mock/data.js';
+import { MOCK_BLUEPRINTS, DEPARTMENTS } from '../mock/blueprints.js';
 
-const USE_MOCK = true; // flip to false when connecting to real backend
+const USE_MOCK = false; // 切换为真实后端
 
 const api = axios.create({
   baseURL: '/api',
@@ -77,6 +78,10 @@ function mockGetCapabilityDist() {
   return Promise.resolve({ data: MOCK_CAPABILITY_DIST });
 }
 
+function mockGetBlueprints() {
+  return Promise.resolve({ data: [...MOCK_BLUEPRINTS] });
+}
+
 // ---- Public API Functions ----
 
 export const employeeApi = {
@@ -102,7 +107,31 @@ export const dashboardApi = {
   capabilityDist: () =>
     USE_MOCK ? mockGetCapabilityDist() : api.get('/dashboard/capability-dist'),
   activity: (params) =>
-    USE_MOCK ? mockGetActivity(params) : api.get('/activity', { params }),
+    USE_MOCK ? mockGetActivity(params) : api.get('/dashboard/activity', { params }),
 };
 
+export const onboardingApi = {
+  list: () =>
+    USE_MOCK ? mockGetBlueprints() : api.get('/onboarding/blueprints'),
+  deploy: (payload) =>
+    USE_MOCK ? Promise.resolve({ data: null }) : api.post('/onboarding/deploy', payload),
+  // Phase 2 新增：
+  adjustTraffic: (blueprintId, versionIndex, traffic) =>
+    api.put(`/onboarding/blueprints/${blueprintId}/traffic`, {
+      version_index: versionIndex,
+      traffic,
+    }),
+  deprecateVersion: (blueprintId, versionIndex) =>
+    api.put(`/onboarding/blueprints/${blueprintId}/versions/${versionIndex}/deprecate`),
+  deleteBlueprint: (blueprintId) =>
+    api.delete(`/onboarding/blueprints/${blueprintId}`),
+};
+
+export const opsApi = {
+  execute: (payload) =>
+    USE_MOCK ? Promise.resolve({ data: { status: 'ok', summary: 'mock', tokenTotal: 100, durationMs: 2000 } })
+      : api.post('/ops/execute', payload),
+};
+
+export { DEPARTMENTS };
 export default api;
