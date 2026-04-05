@@ -9,6 +9,10 @@ import {
   MOCK_TASK_TREND,
   MOCK_ACTIVITY,
 } from '../mock/data.js';
+import {
+  MOCK_BLUEPRINTS,
+  DEPARTMENTS,
+} from '../mock/blueprints.js';
 
 const USE_MOCK = true; // flip to false when connecting to real backend
 
@@ -62,6 +66,20 @@ function mockGetActivity({ limit = 10 } = {}) {
   return Promise.resolve({ data: MOCK_ACTIVITY.slice(0, limit) });
 }
 
+function mockGetBlueprints() {
+  return Promise.resolve({ data: MOCK_BLUEPRINTS });
+}
+
+function mockDeploy(payload) {
+  return Promise.resolve({ data: payload });
+}
+
+function mockAdjustTraffic(blueprintId, versionIndex, traffic) {
+  return Promise.resolve({
+    data: { blueprintId, versionIndex, traffic },
+  });
+}
+
 // ---- Public API Functions ----
 
 export const employeeApi = {
@@ -84,4 +102,37 @@ export const dashboardApi = {
     USE_MOCK ? mockGetActivity(params) : api.get('/activity', { params }),
 };
 
+export const opsApi = {
+  execute: (payload) =>
+    USE_MOCK
+      ? Promise.resolve({
+          data: {
+            status: 'ok',
+            summary: 'mock',
+            tokenTotal: 100,
+            durationMs: 2000,
+          },
+        })
+      : api.post('/ops/execute', payload),
+};
+
+export const onboardingApi = {
+  list: () =>
+    USE_MOCK ? mockGetBlueprints() : api.get('/onboarding/blueprints'),
+  deploy: (payload) =>
+    USE_MOCK ? mockDeploy(payload) : api.post('/onboarding/deploy', payload),
+  adjustTraffic: (blueprintId, versionIndex, traffic) =>
+    USE_MOCK
+      ? mockAdjustTraffic(blueprintId, versionIndex, traffic)
+      : api.put(`/onboarding/blueprints/${blueprintId}/traffic`, {
+          versionIndex,
+          traffic,
+        }),
+  deprecateVersion: (blueprintId, versionIndex) =>
+    api.put(`/onboarding/blueprints/${blueprintId}/deprecate`, {
+      versionIndex,
+    }),
+};
+
+export { DEPARTMENTS };
 export default api;
