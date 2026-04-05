@@ -4,6 +4,7 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -17,6 +18,7 @@ from .db import (
     init_db,
     record_execution,
 )
+from .openclaw_registry import OpenclawAgentRegistry
 
 OPS_API_KEY = os.environ.get("OPS_API_KEY", "")
 
@@ -163,7 +165,7 @@ def _demo_scheduler():
         idx += 1
 
         try:
-            raw = _run_piagent(message, "chat", timeout=60)
+            raw = _run_piagent(message, bp_id, timeout=60)
             meta = raw.get("result", {}).get("meta", {})
             usage = meta.get("agentMeta", {}).get("usage", {})
             token_input = usage.get("input", 0)
@@ -365,7 +367,7 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
 
-    agent_id = req.get("agent_id", "chat")
+    agent_id = req.get("blueprint_id")
     bp_id = req.get("blueprint_id", "av-swe-001")
     alias = req.get("alias", "码哥")
     role = req.get("role", "软件工程师")
@@ -431,16 +433,39 @@ def get_blueprints(_: bool = Depends(verify_api_key)):
 
 @app.post("/api/onboarding/deploy")
 def deploy_avatar(req: dict, _: bool = Depends(verify_api_key)):
+    """Deploy a new avatar and auto-create openclaw agent directory."""
     bp_id = f"av-{req['role']}-{int(time.time())}"
     scaling = req["scaling"]
+    soul = req.get("soul", {})
     new_version = {
         "version": "v1.0.0",
         "status": "published",
         "traffic": 100,
         "replicas": scaling["minReplicas"],
-        "config": {"soul": {}, "skills": [], "tools": [], "model": ""},
+        "config": {
+            "soul": soul,
+            "skills": req.get("skills", []),
+            "tools": req.get("tools", []),
+            "model": req.get("model", ""),
+        },
         "scaling": scaling,
     }
+
+    # Create openclaw agent
+    openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
+    agents_dir = openclaw_dir / "agents"
+    registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
+    try:
+        registry.register_agent(
+            blueprint_id=bp_id,
+            alias=req["alias"],
+            role=req["role"],
+            department=req["department"],
+            soul=soul,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create openclaw agent: {e}")
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -538,7 +563,7 @@ def deprecate_version(bp_id: str, idx: int, _: bool = Depends(verify_api_key)):
 
 @app.delete("/api/onboarding/blueprints/{bp_id}")
 def delete_blueprint(bp_id: str, _: bool = Depends(verify_api_key)):
-    """删除指定 Blueprint。"""
+    """Delete blueprint and its openclaw agent directory."""
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id FROM blueprints WHERE id = ?", (bp_id,))
@@ -548,4 +573,11 @@ def delete_blueprint(bp_id: str, _: bool = Depends(verify_api_key)):
     cur.execute("DELETE FROM blueprints WHERE id = ?", (bp_id,))
     conn.commit()
     conn.close()
+
+    # Clean up openclaw agent
+    openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
+    agents_dir = openclaw_dir / "agents"
+    registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
+    registry.remove_agent(bp_id)
+
     return {"deleted": bp_id}
