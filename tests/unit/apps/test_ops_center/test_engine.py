@@ -5,9 +5,10 @@ from __future__ import annotations
 import pytest
 
 from apps.ops_center.engine import (
+    _auto_seed,
+    _active_rules,
     _eval_condition,
     _firing_alerts,
-    _active_rules,
     evaluate_rules,
     get_rule,
     list_firing_alerts,
@@ -106,8 +107,6 @@ class TestAlertEngine:
 
     def test_builtin_rules_registered(self):
         _reset()
-        from apps.ops_center.engine import _auto_seed
-
         _auto_seed()
         assert len(list_rules()) >= 3  # At least 3 built-in rules
 
