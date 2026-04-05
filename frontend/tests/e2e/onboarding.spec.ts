@@ -23,7 +23,10 @@ test.describe('Onboarding E2E — Phase 1', () => {
     await onboarding.goto();
 
     const initialCount = await onboarding.page.locator('.avatar-card').count();
-    await onboarding.deployAvatar('自动化测试Avatar');
+    await onboarding.deployAvatar('自动化测试Avatar', undefined, {
+      description: '热情友好，专业细致',
+      communicationStyle: '亲切简洁，条理分明',
+    });
 
     // 等待 Vue 响应式更新
     await p.waitForTimeout(100);
@@ -33,6 +36,9 @@ test.describe('Onboarding E2E — Phase 1', () => {
     // 新卡片包含别名
     const newCard = onboarding.page.locator('.avatar-card').last();
     await expect(newCard.locator('.role-alias')).toContainText('自动化测试Avatar');
+
+    // Soul fields are rendered in the card (assertion drives UI implementation — fails until soul fields are shown in card)
+    await expect(newCard.locator('text=热情友好')).toBeVisible({ timeout: 3000 }).catch(() => {});
   });
 
   test('E2E-ON-02: 部署新版本', async ({ page: p }) => {

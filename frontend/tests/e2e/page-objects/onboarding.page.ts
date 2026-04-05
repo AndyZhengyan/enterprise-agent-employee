@@ -31,14 +31,30 @@ export class OnboardingPage {
     await this.page.locator('.modal').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
   }
 
-  async deployAvatar(alias: string, department?: string) {
+  async deployAvatar(
+    alias: string,
+    department?: string,
+    soul?: { description: string; communicationStyle: string },
+  ) {
     await this.openDeployModal();
+
+    // Fill alias — first .field-input in the modal
     if (alias) {
-      await this.page.locator('.field-input').fill(alias);
+      await this.page.locator('.modal .field-input').first().fill(alias);
     }
+
+    // Fill soul fields (identified by placeholder text)
+    if (soul?.description) {
+      await this.page.locator('[placeholder*="热情友好"]').fill(soul.description);
+    }
+    if (soul?.communicationStyle) {
+      await this.page.locator('[placeholder*="亲切简洁"]').fill(soul.communicationStyle);
+    }
+
     if (department) {
       await this.page.locator('.field-select').selectOption(department);
     }
+
     await this.submitDeploy();
   }
 
