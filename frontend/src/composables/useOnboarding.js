@@ -52,25 +52,21 @@ function getStatusDot(status) {
   return map[status] || 'var(--text-disabled)';
 }
 
-function adjustTraffic(blueprintId, versionIndex, newTraffic) {
-  const bp = blueprints.value.find(b => b.id === blueprintId);
-  if (!bp) return;
-
-  const versions = bp.versions.filter(v => v.status === 'published');
-  if (versions.length < 2) return;
-
-  const current = versions[versionIndex];
-  const delta = current.traffic - newTraffic;
-  current.traffic = newTraffic;
-
-  // Redistribute delta among other published versions
-  const others = versions.filter((_, i) => i !== versionIndex);
-  const totalOthers = others.reduce((s, v) => s + v.traffic, 0);
-  others.forEach(v => {
-    v.traffic = totalOthers > 0
-      ? Math.round(v.traffic + delta * (v.traffic / totalOthers))
-      : Math.round(newTraffic / (versions.length - 1));
-  });
+async function adjustTraffic(blueprintId, versionIndex, traffic) {
+  try {
+    const res = await onboardingApi.adjustTraffic(blueprintId, versionIndex, traffic);
+    const bp = blueprints.value.find(b => b.id === blueprintId);
+    if (bp && res.data) {
+      bp.versions = res.data.versions;
+      bp.capacity = res.data.capacity;
+    }
+  } catch {
+    // In stub mode or if API fails, do optimistic local update
+    const bp = blueprints.value.find(b => b.id === blueprintId);
+    if (bp && bp.versions[versionIndex]) {
+      bp.versions[versionIndex].traffic = traffic;
+    }
+  }
 }
 
 function deprecateVersion(blueprintId, versionIndex) {
@@ -81,6 +77,9 @@ function deprecateVersion(blueprintId, versionIndex) {
         bp.versions = res.data.versions;
         bp.capacity = res.data.capacity;
       }
+    })
+    .catch(() => {
+      // Fall back to optimistic local update (PIAGENT_CLI_STUB mode)
     });
 }
 
