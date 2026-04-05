@@ -71,7 +71,29 @@ function mockGetBlueprints() {
 }
 
 function mockDeploy(payload) {
-  return Promise.resolve({ data: payload });
+  const id = `av-${payload.role}-${Date.now()}`;
+  return Promise.resolve({
+    data: {
+      id,
+      role: payload.role,
+      alias: payload.alias || payload.role,
+      department: payload.department,
+      versions: [
+        {
+          version: 'v1.0.0',
+          status: 'published',
+          traffic: 100,
+          replicas: payload.scaling?.minReplicas ?? 1,
+          config: { soul: payload.soul || {}, skills: [], tools: [], model: '' },
+          scaling: payload.scaling || { minReplicas: 1, maxReplicas: 5, targetLoad: 70 },
+        },
+      ],
+      capacity: {
+        used: payload.scaling?.minReplicas ?? 1,
+        max: payload.scaling?.maxReplicas ?? 5,
+      },
+    },
+  });
 }
 
 function mockAdjustTraffic(blueprintId, versionIndex, traffic) {
