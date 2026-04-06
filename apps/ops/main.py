@@ -31,11 +31,33 @@ def get_key_manager() -> OPSKeyManager:
     return _key_manager
 
 
+def _init_key_manager(db_path: str) -> None:
+    """Initialize the key manager with the given DB path. Idempotent — skips if already initialized."""
+    global _key_manager
+    if _key_manager is not None:
+        return
+    _key_manager = OPSKeyManager(db_path=db_path)
+    _key_manager.init_db()
+    _key_manager.ensure_key_exists()
+
+
+def _force_dev_mode() -> None:
+    """Force dev mode by deactivating any active DB key. For test use only."""
+    global _key_manager
+    if _key_manager is not None:
+        import sqlite3
+        conn = sqlite3.connect(_key_manager.db_path)
+        conn.execute("UPDATE api_keys SET is_active = 0 WHERE is_active = 1")
+        conn.commit()
+        conn.close()
+
+
 def verify_api_key(x_api_key: str = Header(default="")):
-    km = get_key_manager()
-    if km.is_dev_mode():
+    if _key_manager is None:
+        return True  # Uninitialized = dev mode
+    if _key_manager.is_dev_mode():
         return True
-    if not km.verify_key(x_api_key):
+    if not _key_manager.verify_key(x_api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
