@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 
 def _init_test_db(tmp_path, monkeypatch):
-    """Set up the temp DB with schema before TestClient triggers startup()."""
+    """Set up the temp DB with schema and key manager before TestClient triggers startup()."""
     monkeypatch.setenv("OPS_DB_PATH", str(tmp_path / "ops.db"))
     monkeypatch.setattr("apps.ops.db.DB_PATH", str(tmp_path / "ops.db"))
     # Force DB_PATH recompute by reloading the module-level variable
@@ -17,6 +17,13 @@ def _init_test_db(tmp_path, monkeypatch):
     init_db()
     conn = get_db()
     conn.close()
+
+    # Initialize key manager so endpoints don't raise "Key manager not initialized"
+    from apps.ops import main as ops_main
+
+    ops_main._init_key_manager(str(tmp_path / "ops.db"))
+    # Force dev mode so tests don't need API keys
+    ops_main._force_dev_mode()
 
 
 def test_deploy_creates_openclaw_agent(tmp_path, monkeypatch):
