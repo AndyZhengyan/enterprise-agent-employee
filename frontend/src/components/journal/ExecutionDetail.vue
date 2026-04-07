@@ -83,6 +83,10 @@ function formatToken(n) {
           <span class="grid-value">{{ item.dept }}</span>
         </div>
         <div class="grid-item">
+          <span class="grid-label">Blueprint</span>
+          <span class="grid-value mono">{{ item.blueprintId || '—' }}</span>
+        </div>
+        <div class="grid-item">
           <span class="grid-label">Token</span>
           <span class="grid-value mono">{{ formatToken(item.tokenTotal) }}</span>
         </div>
