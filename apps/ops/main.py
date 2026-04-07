@@ -1,18 +1,23 @@
 # apps/ops/main.py — Ops Center API (Dashboard + Onboarding + PiAgent)
+import datetime
 import json
 import os
+import re
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import unquote
 
+import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from common.tracing import get_logger as _ops_get_logger
 
 from .db import (
+    BASE_DIR,
     get_db,
     get_recent_executions,
     init_db,
@@ -726,3 +731,105 @@ def get_execution(exec_id: str, _: bool = Depends(verify_api_key)):
         "summary": row[12],
         "createdAt": row[13],
     }
+
+
+# ── Oracle — Knowledge Archive ─────────────────────────────────
+
+
+ORACLE_DIR = Path(os.environ.get("ORACLE_DIR", str(BASE_DIR / "data" / "oracle")))
+
+
+def _read_frontmatter(content: str) -> tuple[dict, str]:
+    """Parse YAML frontmatter from a markdown string. Returns (meta_dict, body_string)."""
+    if not content.startswith("---"):
+        return {}, content
+    end = content.find("\n---\n", 4)
+    if end == -1:
+        return {}, content
+    meta = yaml.safe_load(content[4:end]) or {}
+    body = content[end + 5 :]
+    return meta, body
+
+
+def _scan_archives(source_filter: str | None = None) -> list[dict]:
+    """Scan oracle directories for .md files and return their metadata."""
+    archives = []
+    dirs_to_scan = ["avatar", "import"] if not source_filter else [source_filter]
+    for sd in dirs_to_scan:
+        d = ORACLE_DIR / sd
+        if not d.is_dir():
+            continue
+        for f in d.glob("*.md"):
+            content = f.read_text(encoding="utf-8")
+            meta, _ = _read_frontmatter(content)
+            slug = f.stem
+            archives.append(
+                {
+                    "id": slug,
+                    "title": meta.get("title", slug),
+                    "source": sd,
+                    "contributor": meta.get("contributor", ""),
+                    "createdAt": meta.get("created_at", ""),
+                    "tags": meta.get("tags", []),
+                    "path": str(f.relative_to(ORACLE_DIR)),
+                }
+            )
+    return sorted(archives, key=lambda a: a.get("createdAt", ""), reverse=True)
+
+
+@app.get("/api/oracle/archives")
+def list_archives(source: str | None = None, _: bool = Depends(verify_api_key)):
+    """List all archives, optionally filtered by source (avatar | import)."""
+    items = _scan_archives(source_filter=source)
+    return {"total": len(items), "items": items}
+
+
+@app.get("/api/oracle/archives/{archive_id}")
+def get_archive(archive_id: str, _: bool = Depends(verify_api_key)):
+    """Get a single archive by slug (filename without .md). archive_id is URL-decoded."""
+    archive_id = unquote(archive_id)
+    for sd in ["avatar", "import"]:
+        fp = ORACLE_DIR / sd / f"{archive_id}.md"
+        if fp.exists():
+            content = fp.read_text(encoding="utf-8")
+            meta, body = _read_frontmatter(content)
+            return {
+                "meta": {
+                    "id": archive_id,
+                    "title": meta.get("title", archive_id),
+                    "source": sd,
+                    "contributor": meta.get("contributor", ""),
+                    "createdAt": meta.get("created_at", ""),
+                    "tags": meta.get("tags", []),
+                },
+                "content": body.strip(),
+            }
+    raise HTTPException(status_code=404, detail="Archive not found")
+
+
+@app.post("/api/oracle/archives/upload")
+def upload_archive(req: dict, _: bool = Depends(verify_api_key)):
+    """Upload a new archive. Creates a .md file under data/oracle/{source}/."""
+    title = req.get("title", "").strip()
+    source = req.get("source", "import")
+    body_content = req.get("content", "")
+    contributor = req.get("contributor", "管理员")
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    if source not in ("avatar", "import"):
+        raise HTTPException(status_code=400, detail="source must be 'avatar' or 'import'")
+    safe_slug = re.sub(r"[^\w\s-]", "", title).replace(" ", "-")
+    created_at = datetime.date.today().isoformat()
+    fp = ORACLE_DIR / source / f"{safe_slug}.md"
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    fm = (
+        f"---\n"
+        f"title: {title}\n"
+        f"source: {source}\n"
+        f"contributor: {contributor}\n"
+        f"created_at: {created_at}\n"
+        f"tags: []\n"
+        f"---\n\n"
+    )
+    fp.write_text(fm + body_content, encoding="utf-8")
+    return {"id": safe_slug, "path": str(fp.relative_to(ORACLE_DIR)), "message": "上传成功"}
