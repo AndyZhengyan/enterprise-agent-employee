@@ -24,7 +24,9 @@ function formatDate(iso) {
 }
 
 function sourceLabel(source) {
-  return source === 'avatar' ? 'Avatar 记忆' : '导入档案';
+  if (source === 'avatar') return 'Avatar 记忆';
+  if (source === 'import') return '导入档案';
+  return '未知来源';
 }
 </script>
 

@@ -11,6 +11,7 @@ const {
   selected,
   total,
   loading,
+  error,
   activeSource,
   fetchArchives,
   selectArchive,
@@ -67,6 +68,11 @@ function handleFilter(source) {
         <!-- 空状态 -->
         <div v-else-if="archives.length === 0" class="list-empty">
           <p>暂无档案</p>
+        </div>
+
+        <!-- 错误状态 -->
+        <div v-else-if="error" class="list-empty">
+          <p>加载失败</p>
         </div>
 
         <!-- 档案卡片列表 -->

@@ -19,7 +19,7 @@ async function fetchArchives(source = '') {
     archives.value = res.data.items;
     total.value = res.data.total;
   } catch (e) {
-    error.value = e.message;
+    error.value = e?.message || String(e);
   } finally {
     loading.value = false;
   }
@@ -36,7 +36,7 @@ async function selectArchive(archive) {
     const res = await oracleApi.get(archive.id);
     selected.value = res.data;
   } catch (e) {
-    error.value = e.message;
+    error.value = e?.message || String(e);
   } finally {
     loading.value = false;
   }

@@ -3,6 +3,7 @@
 <script setup>
 import { computed } from 'vue';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const props = defineProps({
   archive: {
@@ -12,7 +13,9 @@ const props = defineProps({
 });
 
 function sourceLabel(source) {
-  return source === 'avatar' ? 'Avatar 记忆' : '导入档案';
+  if (source === 'avatar') return 'Avatar 记忆';
+  if (source === 'import') return '导入档案';
+  return '未知来源';
 }
 
 function formatTime(iso) {
@@ -31,7 +34,8 @@ function formatTime(iso) {
 // Render markdown with marked, sanitize defaults
 const renderedContent = computed(() => {
   if (!props.archive || !props.archive.content) return '';
-  return marked(props.archive.content);
+  const raw = marked(props.archive.content, { breaks: true, gfm: true });
+  return DOMPurify.sanitize(raw);
 });
 </script>
 
