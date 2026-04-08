@@ -52,6 +52,9 @@ def client(db_path):
     from apps.ops.main import app
 
     with TestClient(app) as c:
+        # After startup fires (which init'd key manager for this module instance),
+        # force dev mode so tests don't need API keys
+        ops_main._force_dev_mode()
         yield c
 
 

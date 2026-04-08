@@ -8,7 +8,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import unquote
 
 import yaml
@@ -24,16 +24,47 @@ from .db import (
     init_db,
     record_execution,
 )
+from .key_manager import OPSKeyManager
 from .openclaw_registry import OpenclawAgentRegistry
 
-OPS_API_KEY = os.environ.get("OPS_API_KEY", "")
+_key_manager: Optional[OPSKeyManager] = None
+
+
+def get_key_manager() -> OPSKeyManager:
+    global _key_manager
+    if _key_manager is None:
+        raise RuntimeError("Key manager not initialized")
+    return _key_manager
+
+
+def _init_key_manager(db_path: str) -> None:
+    """Initialize the key manager with the given DB path. Idempotent — skips if already initialized."""
+    global _key_manager
+    if _key_manager is not None:
+        return
+    _key_manager = OPSKeyManager(db_path=db_path)
+    _key_manager.init_db()
+    _key_manager.ensure_key_exists()
+
+
+def _force_dev_mode() -> None:
+    """Force dev mode by deactivating any active DB key. For test use only."""
+    global _key_manager
+    if _key_manager is not None:
+        import sqlite3
+
+        conn = sqlite3.connect(_key_manager.db_path)
+        conn.execute("UPDATE api_keys SET is_active = 0 WHERE is_active = 1")
+        conn.commit()
+        conn.close()
 
 
 def verify_api_key(x_api_key: str = Header(default="")):
-    if not OPS_API_KEY:
-        # If no OPS_API_KEY is set, allow access (dev mode)
+    if _key_manager is None:
+        return True  # Uninitialized = dev mode
+    if _key_manager.is_dev_mode():
         return True
-    if x_api_key != OPS_API_KEY:
+    if not _key_manager.verify_key(x_api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
@@ -41,9 +72,19 @@ def verify_api_key(x_api_key: str = Header(default="")):
 CORS_ORIGINS = os.environ.get("OPS_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
 
 
+_runner_active = False
+_log = _ops_get_logger("ops")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup — OPSKeyManager
+    global _key_manager
+    db_path = os.environ.get("OPS_DB_PATH", "data/ops.db")
+    _key_manager = OPSKeyManager(db_path=db_path)
+    _key_manager.init_db()
+    _key_manager.ensure_key_exists()
+    # Startup — original init
     init_db()
     _ensure_seed_agents()
     global _runner_active
@@ -53,6 +94,32 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     _runner_active = False
+
+
+def _ensure_seed_agents():
+    """On startup, ensure seed blueprint agents exist in openclaw dirs.
+
+    Non-blocking: if openclaw dir is missing or registration fails, log and continue.
+    Only creates agents for the 4 DEMO_BLUEPRINTS — not for arbitrary blueprints.
+    """
+    try:
+        openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
+        agents_dir = openclaw_dir / "agents"
+        registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
+
+        for bp_id, alias, role, dept in DEMO_BLUEPRINTS:
+            agent_path = agents_dir / bp_id / "agent"
+            if not agent_path.exists():
+                registry.register_agent(
+                    blueprint_id=bp_id,
+                    alias=alias,
+                    role=role,
+                    department=dept,
+                )
+
+        _log.info("seed_agents_ensured")
+    except Exception as e:
+        _log.warning("seed_agents_check_skipped", reason=str(e))
 
 
 app = FastAPI(
@@ -91,9 +158,6 @@ DEMO_BLUEPRINTS = [
     ("av-contract-001", "墨言", "合同专员", "商务运营部"),
     ("av-swe-001", "码哥", "软件工程师", "技术研发部"),
 ]
-
-_runner_active = False
-_log = _ops_get_logger("ops")
 
 
 def _get_gateway_token() -> str:
@@ -222,30 +286,25 @@ def _demo_scheduler():
         time.sleep(30)
 
 
-def _ensure_seed_agents():
-    """On startup, ensure seed blueprint agents exist in openclaw dirs.
+# ── Admin: API Key Management ────────────────────────────────
 
-    Non-blocking: if openclaw dir is missing or registration fails, log and continue.
-    Only creates agents for the 4 DEMO_BLUEPRINTS — not for arbitrary blueprints.
-    """
-    try:
-        openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
-        agents_dir = openclaw_dir / "agents"
-        registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
 
-        for bp_id, alias, role, dept in DEMO_BLUEPRINTS:
-            agent_path = agents_dir / bp_id / "agent"
-            if not agent_path.exists():
-                registry.register_agent(
-                    blueprint_id=bp_id,
-                    alias=alias,
-                    role=role,
-                    department=dept,
-                )
+@app.post("/api/admin/api-key")
+def create_api_key(req: dict, _: bool = Depends(verify_api_key)):
+    """Generate a new API key. Returns the plaintext key ONCE — store it securely."""
+    description = req.get("description", "")
+    key = get_key_manager().generate_and_store(description)
+    return {
+        "key": key,
+        "hint": get_key_manager().get_active_key_hint(),
+        "warning": "This key is shown only once. Store it securely.",
+    }
 
-        _log.info("seed_agents_ensured")
-    except Exception as e:
-        _log.warning("seed_agents_check_skipped", reason=str(e))
+
+@app.get("/api/admin/api-key/hint")
+def get_api_key_hint(_: bool = Depends(verify_api_key)):
+    """Get a hint about the current active key (no secrets exposed)."""
+    return {"hint": get_key_manager().get_active_key_hint()}
 
 
 # ── Dashboard ────────────────────────────────────────────────

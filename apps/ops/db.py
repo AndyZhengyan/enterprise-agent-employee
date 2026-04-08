@@ -112,6 +112,14 @@ def init_db():
         summary TEXT,
         created_at TEXT       -- ISO timestamp
     );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        is_active INTEGER NOT NULL DEFAULT 1
+    );
     """)
     conn.commit()
     conn.close()
