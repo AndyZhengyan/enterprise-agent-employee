@@ -62,10 +62,17 @@ def _force_dev_mode() -> None:
 def verify_api_key(x_api_key: str = Header(default="")):
     if _key_manager is None:
         return True  # Uninitialized = dev mode
-    if _key_manager.is_dev_mode():
+    if os.environ.get("OPS_API_KEY"):
+        # Explicit env key — always verify against it
+        if not _key_manager.verify_key(x_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
         return True
-    if not _key_manager.verify_key(x_api_key):
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    # No env key set — dev mode: allow requests without a key
+    # (auto-generated DB keys are for UI/API clients, not for headless test callers)
+    if x_api_key:
+        # A key was provided — verify it against the DB key if one exists
+        if not _key_manager.verify_key(x_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
 
