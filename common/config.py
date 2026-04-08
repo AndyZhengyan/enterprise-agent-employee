@@ -1,7 +1,7 @@
 import os
 from typing import List, Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class OpenClawSettings(BaseSettings):
@@ -31,9 +31,10 @@ class OpenClawSettings(BaseSettings):
     identity_dir: str = os.path.expanduser("~/.openclaw/identity")
     config_file: str = os.path.expanduser("~/.openclaw/openclaw.json")
 
-    class Config:
-        env_prefix = "OPENCLAW_"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_prefix="OPENCLAW_",
+        case_sensitive=False,
+    )
 
 
 class PiAgentSidecarConfig(BaseSettings):
@@ -45,9 +46,10 @@ class PiAgentSidecarConfig(BaseSettings):
     request_timeout_ms: int = 300_000
     sidecar_script: Optional[str] = None
 
-    class Config:
-        env_prefix = "PIAGENT_SIDECAR_"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_prefix="PIAGENT_SIDECAR_",
+        case_sensitive=False,
+    )
 
 
 class RuntimeSettings(BaseSettings):
@@ -61,9 +63,10 @@ class RuntimeSettings(BaseSettings):
     openclaw: OpenClawSettings = OpenClawSettings()
     piagent_sidecar: PiAgentSidecarConfig = PiAgentSidecarConfig()
 
-    class Config:
-        env_prefix = "RUNTIME_"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_prefix="RUNTIME_",
+        case_sensitive=False,
+    )
 
 
 # 全局配置实例

@@ -6,6 +6,7 @@ import re
 import subprocess
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import unquote
@@ -39,10 +40,26 @@ def verify_api_key(x_api_key: str = Header(default="")):
 
 CORS_ORIGINS = os.environ.get("OPS_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_db()
+    _ensure_seed_agents()
+    global _runner_active
+    _runner_active = True
+    t = threading.Thread(target=_demo_scheduler, daemon=True)
+    t.start()
+    yield
+    # Shutdown
+    _runner_active = False
+
+
 app = FastAPI(
     title="AvatarOS Ops API",
     description="AvatarOS 运营数据 + 入职中心 API + PiAgent 集成",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -205,20 +222,6 @@ def _demo_scheduler():
         time.sleep(30)
 
 
-@app.on_event("startup")
-def startup():
-    init_db()
-
-    # Ensure seed blueprint agents exist in openclaw dirs
-    _ensure_seed_agents()
-
-    # Start background scheduler in a daemon thread
-    global _runner_active
-    _runner_active = True
-    t = threading.Thread(target=_demo_scheduler, daemon=True)
-    t.start()
-
-
 def _ensure_seed_agents():
     """On startup, ensure seed blueprint agents exist in openclaw dirs.
 
@@ -245,12 +248,6 @@ def _ensure_seed_agents():
         _log.warning("seed_agents_check_skipped", reason=str(e))
 
 
-@app.on_event("shutdown")
-def shutdown():
-    global _runner_active
-    _runner_active = False
-
-
 # ── Dashboard ────────────────────────────────────────────────
 
 
@@ -265,6 +262,18 @@ def get_stats():
     """)
     row = cur.fetchone()
     conn.close()
+    if not row:
+        return {
+            "onlineCount": 0,
+            "totalTokenUsage": 0,
+            "monthlyTasks": 0,
+            "systemLoad": 0.0,
+            "taskSuccessRate": 0.0,
+            "tokenEfficiency": 0.0,
+            "taskTrend": {"change": 0, "direction": "up"},
+            "tokenTrendChange": 0,
+            "successRateChange": 0,
+        }
     direction = "down" if row[6] < 0 else "up"
     return {
         "onlineCount": row[0],
