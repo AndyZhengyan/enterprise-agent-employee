@@ -11,7 +11,7 @@ import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded as RateLimitExc
 from slowapi.util import get_remote_address
@@ -72,8 +72,7 @@ class DispatchRequest(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
     callback_url: Optional[str] = Field(default=None, description="回调 URL")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
     @field_validator("callback_url")
     @classmethod

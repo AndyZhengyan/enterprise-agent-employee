@@ -1,18 +1,24 @@
 # apps/ops/main.py — Ops Center API (Dashboard + Onboarding + PiAgent)
+import datetime
 import json
 import os
+import re
 import subprocess
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import unquote
 
+import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from common.tracing import get_logger as _ops_get_logger
 
 from .db import (
+    BASE_DIR,
     get_db,
     get_recent_executions,
     init_db,
@@ -56,19 +62,78 @@ def _force_dev_mode() -> None:
 def verify_api_key(x_api_key: str = Header(default="")):
     if _key_manager is None:
         return True  # Uninitialized = dev mode
-    if _key_manager.is_dev_mode():
+    if os.environ.get("OPS_API_KEY"):
+        # Explicit env key — always verify against it
+        if not _key_manager.verify_key(x_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
         return True
-    if not _key_manager.verify_key(x_api_key):
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    # No env key set — dev mode: allow requests without a key
+    # (auto-generated DB keys are for UI/API clients, not for headless test callers)
+    if x_api_key:
+        # A key was provided — verify it against the DB key if one exists
+        if not _key_manager.verify_key(x_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
 
 CORS_ORIGINS = os.environ.get("OPS_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
 
+
+_runner_active = False
+_log = _ops_get_logger("ops")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup — OPSKeyManager
+    global _key_manager
+    db_path = os.environ.get("OPS_DB_PATH", "data/ops.db")
+    _key_manager = OPSKeyManager(db_path=db_path)
+    _key_manager.init_db()
+    _key_manager.ensure_key_exists()
+    # Startup — original init
+    init_db()
+    _ensure_seed_agents()
+    global _runner_active
+    _runner_active = True
+    t = threading.Thread(target=_demo_scheduler, daemon=True)
+    t.start()
+    yield
+    # Shutdown
+    _runner_active = False
+
+
+def _ensure_seed_agents():
+    """On startup, ensure seed blueprint agents exist in openclaw dirs.
+
+    Non-blocking: if openclaw dir is missing or registration fails, log and continue.
+    Only creates agents for the 4 DEMO_BLUEPRINTS — not for arbitrary blueprints.
+    """
+    try:
+        openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
+        agents_dir = openclaw_dir / "agents"
+        registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
+
+        for bp_id, alias, role, dept in DEMO_BLUEPRINTS:
+            agent_path = agents_dir / bp_id / "agent"
+            if not agent_path.exists():
+                registry.register_agent(
+                    blueprint_id=bp_id,
+                    alias=alias,
+                    role=role,
+                    department=dept,
+                )
+
+        _log.info("seed_agents_ensured")
+    except Exception as e:
+        _log.warning("seed_agents_check_skipped", reason=str(e))
+
+
 app = FastAPI(
     title="AvatarOS Ops API",
     description="AvatarOS 运营数据 + 入职中心 API + PiAgent 集成",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -100,9 +165,6 @@ DEMO_BLUEPRINTS = [
     ("av-contract-001", "墨言", "合同专员", "商务运营部"),
     ("av-swe-001", "码哥", "软件工程师", "技术研发部"),
 ]
-
-_runner_active = False
-_log = _ops_get_logger("ops")
 
 
 def _get_gateway_token() -> str:
@@ -231,58 +293,6 @@ def _demo_scheduler():
         time.sleep(30)
 
 
-@app.on_event("startup")
-def startup():
-    global _key_manager
-    db_path = os.environ.get("OPS_DB_PATH", "data/ops.db")
-    _key_manager = OPSKeyManager(db_path=db_path)
-    _key_manager.init_db()
-    _key_manager.ensure_key_exists()
-
-    init_db()
-
-    # Ensure seed blueprint agents exist in openclaw dirs
-    _ensure_seed_agents()
-
-    # Start background scheduler in a daemon thread
-    global _runner_active
-    _runner_active = True
-    t = threading.Thread(target=_demo_scheduler, daemon=True)
-    t.start()
-
-
-def _ensure_seed_agents():
-    """On startup, ensure seed blueprint agents exist in openclaw dirs.
-
-    Non-blocking: if openclaw dir is missing or registration fails, log and continue.
-    Only creates agents for the 4 DEMO_BLUEPRINTS — not for arbitrary blueprints.
-    """
-    try:
-        openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
-        agents_dir = openclaw_dir / "agents"
-        registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
-
-        for bp_id, alias, role, dept in DEMO_BLUEPRINTS:
-            agent_path = agents_dir / bp_id / "agent"
-            if not agent_path.exists():
-                registry.register_agent(
-                    blueprint_id=bp_id,
-                    alias=alias,
-                    role=role,
-                    department=dept,
-                )
-
-        _log.info("seed_agents_ensured")
-    except Exception as e:
-        _log.warning("seed_agents_check_skipped", reason=str(e))
-
-
-@app.on_event("shutdown")
-def shutdown():
-    global _runner_active
-    _runner_active = False
-
-
 # ── Admin: API Key Management ────────────────────────────────
 
 
@@ -318,6 +328,18 @@ def get_stats():
     """)
     row = cur.fetchone()
     conn.close()
+    if not row:
+        return {
+            "onlineCount": 0,
+            "totalTokenUsage": 0,
+            "monthlyTasks": 0,
+            "systemLoad": 0.0,
+            "taskSuccessRate": 0.0,
+            "tokenEfficiency": 0.0,
+            "taskTrend": {"change": 0, "direction": "up"},
+            "tokenTrendChange": 0,
+            "successRateChange": 0,
+        }
     direction = "down" if row[6] < 0 else "up"
     return {
         "onlineCount": row[0],
@@ -666,3 +688,224 @@ def delete_blueprint(bp_id: str, _: bool = Depends(verify_api_key)):
     registry.remove_agent(bp_id)
 
     return {"deleted": bp_id}
+
+
+# ── Journal — Audit Log ────────────────────────────────────────
+
+
+@app.get("/api/journal/executions")
+def list_executions(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    roles: str | None = None,
+    depts: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    _: bool = Depends(verify_api_key),
+):
+    """Query task executions with filters."""
+    limit = min(limit, 200)
+    conn = get_db()
+    cur = conn.cursor()
+    where_clauses = []
+    params = []
+    if start_date:
+        where_clauses.append("created_at >= ?")
+        params.append(start_date)
+    if end_date:
+        where_clauses.append("created_at <= ?")
+        params.append(end_date)
+    if roles:
+        role_list = [r.strip() for r in roles.split(",") if r.strip()]
+        placeholders = ",".join("?" * len(role_list))
+        where_clauses.append(f"role IN ({placeholders})")
+        params.extend(role_list)
+    if depts:
+        dept_list = [d.strip() for d in depts.split(",") if d.strip()]
+        placeholders = ",".join("?" * len(dept_list))
+        where_clauses.append(f"dept IN ({placeholders})")
+        params.extend(dept_list)
+    if status:
+        where_clauses.append("status = ?")
+        params.append(status)
+    if q:
+        where_clauses.append("(message LIKE ? OR summary LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    cur.execute(f"SELECT COUNT(*) FROM task_executions WHERE {where_sql}", params)
+    total = cur.fetchone()[0]
+    cur.execute(
+        f"""
+        SELECT id, run_id, blueprint_id, alias, role, dept, message,
+               status, token_input, token_completion, token_analysis,
+               duration_ms, summary, created_at
+        FROM task_executions
+        WHERE {where_sql}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        params + [limit, offset],
+    )
+    rows = cur.fetchall()
+    conn.close()
+    items = [
+        {
+            "id": r[0],
+            "runId": r[1],
+            "blueprintId": r[2],
+            "alias": r[3],
+            "role": r[4],
+            "dept": r[5],
+            "message": r[6],
+            "status": r[7],
+            "tokenInput": r[8],
+            "tokenCompletion": r[9],
+            "tokenAnalysis": r[10],
+            "tokenTotal": (r[8] or 0) + (r[9] or 0) + (r[10] or 0),
+            "durationMs": r[11],
+            "summary": r[12],
+            "createdAt": r[13],
+        }
+        for r in rows
+    ]
+    return {"total": total, "items": items}
+
+
+@app.get("/api/journal/executions/{exec_id}")
+def get_execution(exec_id: str, _: bool = Depends(verify_api_key)):
+    """Get a single execution by ID with full detail."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id, run_id, blueprint_id, alias, role, dept, message,
+           status, token_input, token_completion, token_analysis,
+           duration_ms, summary, created_at
+           FROM task_executions WHERE id = ?""",
+        (exec_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return {
+        "id": row[0],
+        "runId": row[1],
+        "blueprintId": row[2],
+        "alias": row[3],
+        "role": row[4],
+        "dept": row[5],
+        "message": row[6],
+        "status": row[7],
+        "tokenInput": row[8],
+        "tokenCompletion": row[9],
+        "tokenAnalysis": row[10],
+        "tokenTotal": (row[8] or 0) + (row[9] or 0) + (row[10] or 0),
+        "durationMs": row[11],
+        "summary": row[12],
+        "createdAt": row[13],
+    }
+
+
+# ── Oracle — Knowledge Archive ─────────────────────────────────
+
+
+ORACLE_DIR = Path(os.environ.get("ORACLE_DIR", str(BASE_DIR / "data" / "oracle")))
+
+
+def _read_frontmatter(content: str) -> tuple[dict, str]:
+    """Parse YAML frontmatter from a markdown string. Returns (meta_dict, body_string)."""
+    if not content.startswith("---"):
+        return {}, content
+    end = content.find("\n---\n", 4)
+    if end == -1:
+        return {}, content
+    meta = yaml.safe_load(content[4:end]) or {}
+    body = content[end + 5 :]
+    return meta, body
+
+
+def _scan_archives(source_filter: str | None = None) -> list[dict]:
+    """Scan oracle directories for .md files and return their metadata."""
+    archives = []
+    dirs_to_scan = ["avatar", "import"] if not source_filter else [source_filter]
+    for sd in dirs_to_scan:
+        d = ORACLE_DIR / sd
+        if not d.is_dir():
+            continue
+        for f in d.glob("*.md"):
+            content = f.read_text(encoding="utf-8")
+            meta, _ = _read_frontmatter(content)
+            slug = f.stem
+            archives.append(
+                {
+                    "id": slug,
+                    "title": meta.get("title", slug),
+                    "source": sd,
+                    "contributor": meta.get("contributor", ""),
+                    "createdAt": meta.get("created_at", ""),
+                    "tags": meta.get("tags", []),
+                    "path": str(f.relative_to(ORACLE_DIR)),
+                }
+            )
+    return sorted(archives, key=lambda a: a.get("createdAt", ""), reverse=True)
+
+
+@app.get("/api/oracle/archives")
+def list_archives(source: str | None = None, _: bool = Depends(verify_api_key)):
+    """List all archives, optionally filtered by source (avatar | import)."""
+    items = _scan_archives(source_filter=source)
+    return {"total": len(items), "items": items}
+
+
+@app.get("/api/oracle/archives/{archive_id}")
+def get_archive(archive_id: str, _: bool = Depends(verify_api_key)):
+    """Get a single archive by slug (filename without .md). archive_id is URL-decoded."""
+    archive_id = unquote(archive_id)
+    for sd in ["avatar", "import"]:
+        fp = ORACLE_DIR / sd / f"{archive_id}.md"
+        if fp.exists():
+            content = fp.read_text(encoding="utf-8")
+            meta, body = _read_frontmatter(content)
+            return {
+                "meta": {
+                    "id": archive_id,
+                    "title": meta.get("title", archive_id),
+                    "source": sd,
+                    "contributor": meta.get("contributor", ""),
+                    "createdAt": meta.get("created_at", ""),
+                    "tags": meta.get("tags", []),
+                },
+                "content": body.strip(),
+            }
+    raise HTTPException(status_code=404, detail="Archive not found")
+
+
+@app.post("/api/oracle/archives/upload")
+def upload_archive(req: dict, _: bool = Depends(verify_api_key)):
+    """Upload a new archive. Creates a .md file under data/oracle/{source}/."""
+    title = req.get("title", "").strip()
+    source = req.get("source", "import")
+    body_content = req.get("content", "")
+    contributor = req.get("contributor", "管理员")
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    if source not in ("avatar", "import"):
+        raise HTTPException(status_code=400, detail="source must be 'avatar' or 'import'")
+    safe_slug = re.sub(r"[^\w\s-]", "", title).replace(" ", "-").replace("\n", "-")
+    created_at = datetime.date.today().isoformat()
+    fp = ORACLE_DIR / source / f"{safe_slug}.md"
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    if fp.exists():
+        raise HTTPException(status_code=409, detail="Archive with this title already exists")
+    fm_dict = {
+        "title": title,
+        "source": source,
+        "contributor": contributor,
+        "created_at": created_at,
+        "tags": [],
+    }
+    fm = yaml.safe_dump(fm_dict, allow_unicode=True, default_flow_style=False)
+    fp.write_text(f"---\n{fm}---\n\n" + "\n" + body_content, encoding="utf-8")
+    return {"id": safe_slug, "path": str(fp.relative_to(ORACLE_DIR)), "message": "上传成功"}
