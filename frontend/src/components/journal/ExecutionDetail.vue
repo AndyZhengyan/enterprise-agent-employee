@@ -103,7 +103,7 @@ function formatToken(n) {
 
       <!-- 原始输入 -->
       <div class="code-block">
-        <pre>{{ item.input ?? '' }}</pre>
+        <pre>{{ item.message ?? '' }}</pre>
       </div>
 
       <!-- 分割线 -->
