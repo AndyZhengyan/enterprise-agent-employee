@@ -304,6 +304,7 @@ def _demo_scheduler():
                     token_completion=token_completion,
                     duration_ms=duration_ms,
                     summary=summary[:200] if summary else "",
+                    response_text=raw.get("responseText", ""),
                 )
                 tok = token_input + token_completion
                 log.info("demo_task_completed", idx=idx, alias=alias, tokens=tok, exec_id=exec_id, run_id=run_id[:8])
@@ -505,15 +506,16 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
 
     raw = _run_piagent(message, openclaw_agent_id, timeout=120)
 
-    # Usage is at raw["result"]["meta"]["agentMeta"]["usage"]
-    meta = raw.get("result", {}).get("meta", {})
+    # openclaw JSON has meta at top level (not under "result")
+    meta = raw.get("meta", {})
     usage = meta.get("agentMeta", {}).get("usage", {})
     token_input = usage.get("input", 0)
     token_analysis = usage.get("cacheRead", 0)
     token_completion = usage.get("output", 0)
     status = raw.get("status", "ok")
-    run_id = raw.get("runId", "")
-    summary = raw.get("summary", "")
+    run_id = meta.get("agentMeta", {}).get("sessionId", "") or raw.get("runId", "")
+    response_text = raw.get("responseText", "")
+    summary = response_text[:200] if response_text else raw.get("summary", "")
     duration_ms = meta.get("durationMs", 0)
 
     if run_id:
@@ -530,6 +532,7 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
             token_completion=token_completion,
             duration_ms=duration_ms,
             summary=summary[:200] if summary else "",
+            response_text=response_text,
         )
     else:
         exec_id = None
@@ -539,7 +542,7 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
         "runId": run_id,
         "status": status,
         "summary": summary,
-        "responseText": raw.get("responseText", ""),
+        "responseText": response_text,
         "tokenInput": token_input,
         "tokenAnalysis": token_analysis,
         "tokenCompletion": token_completion,

@@ -108,12 +108,12 @@ function formatToken(n) {
 
       <!-- 分割线 -->
       <div class="section-divider">
-        <span class="divider-label">输出摘要</span>
+        <span class="divider-label">执行结果</span>
       </div>
 
-      <!-- 输出摘要 -->
+      <!-- 执行结果 -->
       <div class="code-block output-block">
-        <pre>{{ item.summary ?? '' }}</pre>
+        <pre>{{ (item.response_text || item.summary) ?? '' }}</pre>
       </div>
     </template>
   </div>

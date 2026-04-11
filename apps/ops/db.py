@@ -127,6 +127,17 @@ def init_db():
         pass  # column already exists
     conn.commit()
     conn.close()
+
+    # Add missing columns to existing tables (idempotent)
+    conn2 = get_db()
+    cur2 = conn2.cursor()
+    try:
+        cur2.execute("ALTER TABLE task_executions ADD COLUMN response_text TEXT")
+        conn2.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    conn2.close()
+
     seed_data()
 
 
@@ -415,6 +426,7 @@ def record_execution(
     token_completion: int,
     duration_ms: int,
     summary: str,
+    response_text: str = "",
 ) -> str:
     """Record a single task execution and update aggregated dashboard_stats."""
     exec_id = f"exec-{uuid.uuid4().hex[:10]}"
@@ -427,8 +439,8 @@ def record_execution(
     cur.execute(
         "INSERT INTO task_executions "
         "(id,run_id,blueprint_id,alias,role,dept,message,status,"
-        "token_input,token_analysis,token_completion,token_total,duration_ms,summary,created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "token_input,token_analysis,token_completion,token_total,duration_ms,summary,response_text,created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             exec_id,
             run_id,
@@ -444,6 +456,7 @@ def record_execution(
             token_total,
             duration_ms,
             summary,
+            response_text,
             created_at,
         ),
     )
@@ -554,7 +567,7 @@ def get_recent_executions(limit: int = 10):
     cur = conn.cursor()
     cur.execute(
         "SELECT id, blueprint_id, alias, role, dept, message, status, "
-        "   token_total, duration_ms, summary, created_at "
+        "   token_total, duration_ms, summary, response_text, created_at "
         "FROM task_executions ORDER BY created_at DESC LIMIT ?",
         (limit,),
     )
@@ -570,7 +583,8 @@ def get_recent_executions(limit: int = 10):
             "token_total": r[7],
             "duration_ms": r[8],
             "summary": r[9],
-            "created_at": r[10],
+            "response_text": r[10],
+            "created_at": r[11],
         }
         for r in cur.fetchall()
     ]
