@@ -113,7 +113,7 @@ function formatToken(n) {
 
       <!-- 执行结果 -->
       <div class="code-block output-block">
-        <pre>{{ (item.response_text || item.summary) ?? '' }}</pre>
+        <pre>{{ (item.responseText || item.summary) ?? '' }}</pre>
       </div>
     </template>
   </div>

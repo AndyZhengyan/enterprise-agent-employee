@@ -898,7 +898,7 @@ def list_executions(
         f"""
         SELECT id, run_id, blueprint_id, alias, role, dept, message,
                status, token_input, token_completion, token_analysis,
-               duration_ms, summary, created_at
+               duration_ms, summary, response_text, created_at
         FROM task_executions
         WHERE {where_sql}
         ORDER BY created_at DESC
@@ -924,7 +924,8 @@ def list_executions(
             "tokenTotal": (r[8] or 0) + (r[9] or 0) + (r[10] or 0),
             "durationMs": r[11],
             "summary": r[12],
-            "createdAt": r[13],
+            "responseText": r[13],
+            "createdAt": r[14],
         }
         for r in rows
     ]

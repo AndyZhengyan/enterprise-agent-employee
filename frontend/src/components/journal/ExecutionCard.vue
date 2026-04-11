@@ -64,7 +64,7 @@ function statusIcon(status) {
     <div class="card-dept">{{ item.dept }}</div>
 
     <!-- 摘要 -->
-    <div class="card-summary">{{ truncate(item.summary, 72) }}</div>
+    <div class="card-summary">{{ truncate(item.responseText || item.summary, 72) }}</div>
 
     <!-- 底部：token + 耗时 -->
     <div class="card-footer">
