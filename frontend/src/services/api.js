@@ -152,6 +152,8 @@ export const onboardingApi = {
         }),
   deprecateVersion: (blueprintId, versionIndex) =>
     api.put(`/onboarding/blueprints/${blueprintId}/versions/${versionIndex}/deprecate`),
+  getConfig: (bpId) => api.get(`/onboarding/blueprints/${bpId}/config`),
+  saveConfig: (bpId, config) => api.put(`/onboarding/blueprints/${bpId}/config`, config),
 };
 
 // ---- Mock Journal Data ----
