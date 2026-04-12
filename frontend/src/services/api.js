@@ -556,6 +556,15 @@ function mockGetArchive(id) {
   });
 }
 
+// ---- Tools API ----
+
+export const toolsApi = {
+  list: () => api.get('/enablement/tools'),
+  create: (payload) => api.post('/enablement/tools', payload),
+  update: (id, payload) => api.put(`/enablement/tools/${id}`, payload),
+  delete: (id) => api.delete(`/enablement/tools/${id}`),
+};
+
 // ---- Oracle API ----
 
 export const oracleApi = {

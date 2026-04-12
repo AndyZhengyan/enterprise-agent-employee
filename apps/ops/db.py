@@ -95,6 +95,13 @@ def init_db():
         capacity TEXT   -- JSON {used, max}
     );
 
+    CREATE TABLE IF NOT EXISTS tools (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        created_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS task_executions (
         id TEXT PRIMARY KEY,
         run_id TEXT,
@@ -139,6 +146,7 @@ def init_db():
     conn2.close()
 
     seed_data()
+    seed_tools()
 
 
 def seed_data():
@@ -413,12 +421,49 @@ def seed_data():
     conn.close()
 
 
+OPENCLAW_BUILTIN_TOOLS = [
+    ("exec", "运行 Shell 命令，管理后台进程"),
+    ("code_execution", "沙箱远程 Python 分析"),
+    ("browser", "控制 Chromium 浏览器"),
+    ("web_search", "网络搜索"),
+    ("web_fetch", "抓取网页内容"),
+    ("read", "读取文件内容"),
+    ("write", "写入文件内容"),
+    ("edit", "编辑文件内容"),
+    ("apply_patch", "多区块文件补丁"),
+    ("message", "跨渠道发送消息"),
+    ("canvas", "Node Canvas 控制"),
+    ("nodes", "发现和定位配对设备"),
+    ("cron", "定时任务管理"),
+    ("gateway", "网关操作"),
+    ("image", "图片分析/生成"),
+    ("music_generate", "音乐生成"),
+    ("video_generate", "视频生成"),
+    ("tts", "文字转语音"),
+    ("subagents", "子 Agent 管理"),
+    ("session_status", "会话状态查询"),
+]
+
+def seed_tools():
+    """Seed OpenClaw built-in tools if tools table is empty."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM tools")
+    if cur.fetchone()[0] > 0:
+        conn.close()
+        return
+    for name, description in OPENCLAW_BUILTIN_TOOLS:
+        cur.execute(
+            "INSERT OR IGNORE INTO tools (id, name, description, created_at) VALUES (?, ?, ?, ?)",
+            (name, name, description, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+        )
+    conn.commit()
+    conn.close()
+
+
 def record_execution(
     run_id: str,
     blueprint_id: str,
-    alias: str,
-    role: str,
-    dept: str,
     message: str,
     status: str,
     token_input: int,
@@ -430,7 +475,6 @@ def record_execution(
 ) -> str:
     """Record a single task execution and update aggregated dashboard_stats."""
     exec_id = f"exec-{uuid.uuid4().hex[:10]}"
-    token_total = token_input + token_analysis + token_completion
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     conn = get_db()
@@ -438,22 +482,18 @@ def record_execution(
 
     cur.execute(
         "INSERT INTO task_executions "
-        "(id,run_id,blueprint_id,alias,role,dept,message,status,"
-        "token_input,token_analysis,token_completion,token_total,duration_ms,summary,response_text,created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id,run_id,blueprint_id,message,status,"
+        "token_input,token_analysis,token_completion,duration_ms,summary,response_text,created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             exec_id,
             run_id,
             blueprint_id,
-            alias,
-            role,
-            dept,
             message,
             status,
             token_input,
             token_analysis,
             token_completion,
-            token_total,
             duration_ms,
             summary,
             response_text,
@@ -473,7 +513,7 @@ def _recalc_stats(conn: sqlite3.Connection) -> None:
 
     # Token totals: real executions + seed baseline
     cur.execute("""
-        SELECT COALESCE(SUM(token_total), 0) AS total_tokens,
+        SELECT COALESCE(SUM(token_input + token_analysis + token_completion), 0) AS total_tokens,
                COUNT(*) AS total_tasks,
                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS success_count
         FROM task_executions
@@ -562,13 +602,17 @@ def _recalc_stats(conn: sqlite3.Connection) -> None:
 
 
 def get_recent_executions(limit: int = 10):
-    """Return recent task executions for the activity feed."""
+    """Return recent task executions for the activity feed, joining with blueprints for latest alias."""
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, blueprint_id, alias, role, dept, message, status, "
-        "   token_total, duration_ms, summary, response_text, created_at "
-        "FROM task_executions ORDER BY created_at DESC LIMIT ?",
+        """
+        SELECT t.id, t.blueprint_id, b.alias, b.role, b.department, t.message, t.status,
+               t.token_input, t.token_analysis, t.token_completion, t.duration_ms, t.summary, t.response_text, t.created_at
+        FROM task_executions t
+        LEFT JOIN blueprints b ON t.blueprint_id = b.id
+        ORDER BY t.created_at DESC LIMIT ?
+        """,
         (limit,),
     )
     rows = [
@@ -580,11 +624,13 @@ def get_recent_executions(limit: int = 10):
             "dept": r[4],
             "message": r[5],
             "status": r[6],
-            "token_total": r[7],
-            "duration_ms": r[8],
-            "summary": r[9],
-            "response_text": r[10],
-            "created_at": r[11],
+            "token_input": r[7],
+            "token_analysis": r[8],
+            "token_completion": r[9],
+            "duration_ms": r[10],
+            "summary": r[11],
+            "response_text": r[12],
+            "created_at": r[13],
         }
         for r in cur.fetchall()
     ]

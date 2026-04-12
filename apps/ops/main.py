@@ -4,7 +4,6 @@ import json
 import os
 import re
 import subprocess
-import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,6 +25,7 @@ from .db import (
 )
 from .key_manager import OPSKeyManager
 from .openclaw_registry import OpenclawAgentRegistry
+from .tools_registry import list_tools, create_tool, update_tool, delete_tool
 
 _key_manager: Optional[OPSKeyManager] = None
 
@@ -93,40 +93,7 @@ async def lifespan(app: FastAPI):
     _key_manager.ensure_key_exists()
     # Startup — original init
     init_db()
-    _ensure_seed_agents()
-    global _runner_active
-    _runner_active = True
-    t = threading.Thread(target=_demo_scheduler, daemon=True)
-    t.start()
     yield
-    # Shutdown
-    _runner_active = False
-
-
-def _ensure_seed_agents():
-    """On startup, ensure seed blueprint agents exist in openclaw dirs.
-
-    Non-blocking: if openclaw dir is missing or registration fails, log and continue.
-    Only creates agents for the 4 DEMO_BLUEPRINTS — not for arbitrary blueprints.
-    """
-    try:
-        openclaw_dir = Path(os.environ.get("OPENCLAW_DIR", str(os.path.expanduser("~/.openclaw"))))
-        agents_dir = openclaw_dir / "agents"
-        registry = OpenclawAgentRegistry(openclaw_dir=openclaw_dir, agents_dir=agents_dir)
-
-        for bp_id, alias, role, dept in DEMO_BLUEPRINTS:
-            agent_path = agents_dir / bp_id / "agent"
-            if not agent_path.exists():
-                registry.register_agent(
-                    blueprint_id=bp_id,
-                    alias=alias,
-                    role=role,
-                    department=dept,
-                )
-
-        _log.info("seed_agents_ensured")
-    except Exception as e:
-        _log.warning("seed_agents_check_skipped", reason=str(e))
 
 
 app = FastAPI(
@@ -143,28 +110,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ── Background demo task scheduler ────────────────────────────
-# Periodically runs sample tasks against PiAgent to populate live dashboard data.
-
-DEMO_MESSAGES = [
-    "帮我整理一下本周的工作进展，写一份简短的周报",
-    "检查一下合同文件中的关键条款有没有风险",
-    "分析一下本月的数据报表，列出主要增长点",
-    "帮我写一封给客户的商务邮件，回复关于合作条款的询问",
-    "检索一下最新的数据安全法规，整理要点",
-    "生成本月运营数据的可视化图表",
-    "审阅这份技术方案文档，提出改进建议",
-    "帮我查询最近的行业竞品动态",
-]
-
-DEMO_BLUEPRINTS = [
-    ("av-admin-001", "小白", "行政专员", "综合管理部"),
-    ("av-legal-001", "明律", "法务专员", "法务合规部"),
-    ("av-contract-001", "墨言", "合同专员", "商务运营部"),
-    ("av-swe-001", "码哥", "软件工程师", "技术研发部"),
-]
 
 
 def _get_gateway_token() -> str:
@@ -240,22 +185,33 @@ def _run_piagent(message: str, agent_id: str = "chat", timeout: int = 60) -> Dic
             env=env,
             check=False,
         )
-        # openclaw writes JSON response to stderr (stdout is typically empty)
-        stderr_output = result.stderr.strip()
-        if not stderr_output:
-            return {"status": "error", "summary": "Empty response", "usage": {}}
-        # Find JSON start (stderr may have config warnings before the JSON object)
-        json_start = stderr_output.find("{")
-        if json_start == -1:
-            # No JSON found — return error unless exit code is 0
-            if result.returncode == 0:
-                return {"status": "error", "summary": f"No JSON in output: {stderr_output[:200]}", "usage": {}}
-            return {"status": "error", "summary": f"CLI error: {stderr_output[:200]}", "usage": {}}
-        parsed = json.loads(stderr_output[json_start:])
+        # openclaw writes JSON response to stdout; stderr may contain config warnings
+        stdout_output = result.stdout.strip()
+        if not stdout_output:
+            # Fall back to stderr (some configs may write JSON there)
+            fallback_output = result.stderr.strip()
+            if not fallback_output:
+                return {"status": "error", "summary": "Empty response", "usage": {}}
+            json_start = fallback_output.find("{")
+            if json_start == -1:
+                if result.returncode == 0:
+                    return {"status": "error", "summary": f"No JSON in output: {fallback_output[:200]}", "usage": {}}
+                return {"status": "error", "summary": f"CLI error: {fallback_output[:200]}", "usage": {}}
+            parsed = json.loads(fallback_output[json_start:])
+        else:
+            parsed = json.loads(stdout_output)
         # Extract the actual response text for the user
-        text = parsed.get("payloads", [{}])[0].get("text", "") or parsed.get("meta", {}).get(
-            "finalAssistantVisibleText", ""
+        # Paths: result.payloads[0].text (primary) or result.meta.finalAssistantVisibleText (fallback)
+        result_block = parsed.get("result", {})
+        payloads = result_block.get("payloads")
+        text = (
+            payloads[0].get("text", "")
+            if payloads
+            else result_block.get("meta", {}).get("finalAssistantVisibleText", "")
         )
+        # "NO_REPLY" means the agent ran but produced no visible output — treat as empty
+        if text == "NO_REPLY":
+            text = ""
         parsed["responseText"] = text
         return parsed
     except FileNotFoundError:
@@ -266,51 +222,6 @@ def _run_piagent(message: str, agent_id: str = "chat", timeout: int = 60) -> Dic
         return {"status": "error", "summary": f"Invalid JSON: {e}", "usage": {}}
     except Exception as e:
         return {"status": "error", "summary": str(e), "usage": {}}
-
-
-def _demo_scheduler():
-    """Background loop: run demo tasks every 30 seconds."""
-    global _runner_active
-    idx = 0
-    log = _ops_get_logger("ops_scheduler")
-    log.info("scheduler_thread_started")
-    while _runner_active:
-        bp_id, alias, role, dept = DEMO_BLUEPRINTS[idx % len(DEMO_BLUEPRINTS)]
-        message = DEMO_MESSAGES[idx % len(DEMO_MESSAGES)]
-        idx += 1
-
-        try:
-            raw = _run_piagent(message, bp_id, timeout=60)
-            meta = raw.get("result", {}).get("meta", {})
-            usage = meta.get("agentMeta", {}).get("usage", {})
-            token_input = usage.get("input", 0)
-            token_completion = usage.get("output", 0)
-            status = raw.get("status", "ok")
-            run_id = raw.get("runId", "")
-            summary = raw.get("summary", "")
-            duration_ms = meta.get("durationMs", 0)
-
-            exec_id = record_execution(
-                run_id=run_id or "",
-                blueprint_id=bp_id,
-                alias=alias,
-                role=role,
-                dept=dept,
-                message=message,
-                status=status,
-                token_input=token_input,
-                token_analysis=usage.get("cacheRead", 0),
-                token_completion=token_completion,
-                duration_ms=duration_ms,
-                summary=summary[:200] if summary else "",
-                response_text=raw.get("responseText", ""),
-            )
-            tok = token_input + token_completion
-            log.info("demo_task_recorded", idx=idx, alias=alias, tokens=tok, exec_id=exec_id, status=status)
-        except Exception as e:
-            log.error("demo_task_error", idx=idx, error=str(e))
-
-        time.sleep(30)
 
 
 # ── Admin: API Key Management ────────────────────────────────
@@ -503,23 +414,24 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
 
     agent_id = req.get("blueprint_id", "av-swe-001")
     bp_id = agent_id
-    alias = req.get("alias", "码哥")
-    role = req.get("role", "软件工程师")
-    dept = req.get("dept", "技术研发部")
 
-    # Look up the openclaw-normalized agent ID from DB
+    # Look up the blueprint details (alias, role, dept) and openclaw agent ID from DB
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT openclaw_agent_id FROM blueprints WHERE id = ?", (bp_id,))
+    cur.execute("SELECT alias, role, department, openclaw_agent_id FROM blueprints WHERE id = ?", (bp_id,))
     row = cur.fetchone()
     conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Blueprint not found")
+    alias, role, dept, openclaw_agent_id = row
     # Use normalized ID if set, otherwise fall back to original (pre-migration blueprints)
-    openclaw_agent_id = row[0] if row and row[0] else agent_id
+    if not openclaw_agent_id:
+        openclaw_agent_id = agent_id
 
     raw = _run_piagent(message, openclaw_agent_id, timeout=120)
 
-    # openclaw JSON has meta at top level (not under "result")
-    meta = raw.get("meta", {})
+    # openclaw JSON: meta lives under result.meta
+    meta = raw.get("result", {}).get("meta", {})
     usage = meta.get("agentMeta", {}).get("usage", {})
     token_input = usage.get("input", 0)
     token_analysis = usage.get("cacheRead", 0)
@@ -533,9 +445,6 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
     exec_id = record_execution(
         run_id=run_id or "",
         blueprint_id=bp_id,
-        alias=alias,
-        role=role,
-        dept=dept,
         message=message,
         status=status,
         token_input=token_input,
@@ -557,6 +466,9 @@ def execute_task(req: dict, _: bool = Depends(verify_api_key)):
         "tokenCompletion": token_completion,
         "tokenTotal": token_input + token_analysis + token_completion,
         "durationMs": duration_ms,
+        "alias": alias,
+        "role": role,
+        "dept": dept,
     }
 
 
@@ -738,6 +650,39 @@ def delete_blueprint(bp_id: str, _: bool = Depends(verify_api_key)):
     return {"deleted": bp_id}
 
 
+# ── Enablement ──────────────────────────────────────────────────────────────
+
+
+@app.get("/enablement/tools")
+def get_tools():
+    return list_tools()
+
+
+@app.post("/enablement/tools")
+def post_tools(req: dict):
+    name = req.get("name", "").strip()
+    description = req.get("description", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    return create_tool(name, description)
+
+
+@app.put("/enablement/tools/{tool_id}")
+def put_tools(tool_id: str, req: dict):
+    description = req.get("description", "").strip()
+    result = update_tool(tool_id, description)
+    if not result:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    return result
+
+
+@app.delete("/enablement/tools/{tool_id}")
+def del_tools(tool_id: str):
+    if not delete_tool(tool_id):
+        raise HTTPException(status_code=404, detail="Tool not found")
+    return {"message": "deleted"}
+
+
 # ─── Test Support ────────────────────────────────────────────────────────────
 
 
@@ -905,12 +850,13 @@ def list_executions(
     total = cur.fetchone()[0]
     cur.execute(
         f"""
-        SELECT id, run_id, blueprint_id, alias, role, dept, message,
-               status, token_input, token_completion, token_analysis,
-               duration_ms, summary, response_text, created_at
-        FROM task_executions
+        SELECT t.id, t.run_id, t.blueprint_id, b.alias, b.role, b.department, t.message,
+               t.status, t.token_input, t.token_completion, t.token_analysis,
+               t.duration_ms, t.summary, t.response_text, t.created_at
+        FROM task_executions t
+        LEFT JOIN blueprints b ON t.blueprint_id = b.id
         WHERE {where_sql}
-        ORDER BY created_at DESC
+        ORDER BY t.created_at DESC
         LIMIT ? OFFSET ?
         """,
         params + [limit, offset],
@@ -947,10 +893,12 @@ def get_execution(exec_id: str, _: bool = Depends(verify_api_key)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        """SELECT id, run_id, blueprint_id, alias, role, dept, message,
-           status, token_input, token_completion, token_analysis,
-           duration_ms, summary, created_at
-           FROM task_executions WHERE id = ?""",
+        """SELECT t.id, t.run_id, t.blueprint_id, b.alias, b.role, b.department, t.message,
+           t.status, t.token_input, t.token_completion, t.token_analysis,
+           t.duration_ms, t.summary, t.created_at
+           FROM task_executions t
+           LEFT JOIN blueprints b ON t.blueprint_id = b.id
+           WHERE t.id = ?""",
         (exec_id,),
     )
     row = cur.fetchone()
@@ -1080,3 +1028,9 @@ def upload_archive(req: dict, _: bool = Depends(verify_api_key)):
     fm = yaml.safe_dump(fm_dict, allow_unicode=True, default_flow_style=False)
     fp.write_text(f"---\n{fm}---\n\n" + "\n" + body_content, encoding="utf-8")
     return {"id": safe_slug, "path": str(fp.relative_to(ORACLE_DIR)), "message": "上传成功"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8006)
