@@ -95,14 +95,14 @@ def seed_all():
 
     b = DASHBOARD_STATS_BASELINE
     dash_stats = (
-        10,                                   # online_count
-        b["total_token_usage"],               # 19_480_000
-        b["total_tasks"],                     # 4513
-        68,                                   # system_load
-        94.2,                                 # task_success_rate
-        3.2,                                  # token_efficiency
-        -8.7,                                 # task_trend_change
-        2.1,                                  # success_rate_change
+        10,  # online_count
+        b["total_token_usage"],  # 19_480_000
+        b["total_tasks"],  # 4513
+        68,  # system_load
+        94.2,  # task_success_rate
+        3.2,  # token_efficiency
+        -8.7,  # task_trend_change
+        2.1,  # success_rate_change
     )
     cur.execute(
         """

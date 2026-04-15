@@ -6,6 +6,7 @@ Imported by:
 
 Both consumers must import from here; do not duplicate data elsewhere.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -121,10 +122,10 @@ SEED_VERSIONS: dict[str, list[dict[str, Any]]] = {
 
 # Blueprint identity metadata — matched to SEED_VERSIONS keys.
 _BLUEPRINT_META = {
-    "av-admin-001":    {"role": "行政专员",   "alias": "小白", "department": "综合管理部"},
-    "av-legal-001":    {"role": "法务专员",   "alias": "明律", "department": "法务合规部"},
-    "av-contract-001": {"role": "合同专员",   "alias": "墨言", "department": "商务运营部"},
-    "av-swe-001":      {"role": "软件工程师", "alias": "码哥", "department": "技术研发部"},
+    "av-admin-001": {"role": "行政专员", "alias": "小白", "department": "综合管理部"},
+    "av-legal-001": {"role": "法务专员", "alias": "明律", "department": "法务合规部"},
+    "av-contract-001": {"role": "合同专员", "alias": "墨言", "department": "商务运营部"},
+    "av-swe-001": {"role": "软件工程师", "alias": "码哥", "department": "技术研发部"},
 }
 
 
@@ -138,12 +139,14 @@ def get_blueprints_data() -> list[dict[str, Any]]:
     for bp_id, versions in SEED_VERSIONS.items():
         meta = _BLUEPRINT_META[bp_id]
         capacity = dict(SEED_CAPACITY[bp_id])
-        rows.append({
-            "id": bp_id,
-            "role": meta["role"],
-            "alias": meta["alias"],
-            "department": meta["department"],
-            "versions": versions,
-            "capacity": capacity,
-        })
+        rows.append(
+            {
+                "id": bp_id,
+                "role": meta["role"],
+                "alias": meta["alias"],
+                "department": meta["department"],
+                "versions": versions,
+                "capacity": capacity,
+            }
+        )
     return rows
