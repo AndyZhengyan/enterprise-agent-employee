@@ -76,6 +76,7 @@ def _auto_seed() -> None:
             description=str(skill_def["description"]),
             level=SkillLevel.L1,
             status=SkillStatus.PUBLISHED,
+            connector_id=skill_def.get("connector_id"),
             capabilities=[
                 SkillCapability(
                     name=str(c["name"]),
@@ -94,6 +95,7 @@ _BUILTIN_SKILLS: List[Dict[str, Any]] = [
         "id": "builtin-approval",
         "name": "审批流程",
         "description": "企业审批流程 — 请假、报销、采购等",
+        # TODO: connector_id = "approval-connector" once ConnectorHub registers one
         "capabilities": [
             {"name": "submit_approval", "description": "提交审批申请"},
             {"name": "query_status", "description": "查询审批状态"},
@@ -103,6 +105,7 @@ _BUILTIN_SKILLS: List[Dict[str, Any]] = [
         "id": "builtin-notification",
         "name": "企业通知",
         "description": "飞书/邮件/短信多渠道通知",
+        # TODO: connector_id = "notification-connector" once ConnectorHub registers one
         "capabilities": [
             {"name": "send_message", "description": "发送通知消息"},
             {"name": "send_bulk", "description": "批量发送通知"},
@@ -112,6 +115,7 @@ _BUILTIN_SKILLS: List[Dict[str, Any]] = [
         "id": "builtin-email",
         "name": "邮件处理",
         "description": "邮件读取、发送、搜索",
+        # TODO: connector_id = "email-connector" once ConnectorHub registers one
         "capabilities": [
             {"name": "send_email", "description": "发送邮件"},
             {"name": "search_emails", "description": "搜索邮件"},

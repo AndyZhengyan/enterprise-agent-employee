@@ -46,6 +46,10 @@ class Skill(BaseModel):
     level: SkillLevel = SkillLevel.L2
     version: str = "1.0"
     capabilities: List[Any] = Field(default_factory=list)  # re-export SkillCapability from common
+    connector_id: Optional[str] = Field(
+        default=None,
+        description="ID of the ConnectorHub connector that backs this skill's invocation",
+    )
     agent_families: List[str] = Field(default_factory=list)
     status: SkillStatus = SkillStatus.DRAFT
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -62,6 +66,7 @@ class RegisterSkillRequest(BaseModel):
     description: str = ""
     level: SkillLevel = SkillLevel.L2
     capabilities: List[Any] = Field(default_factory=list)
+    connector_id: Optional[str] = Field(default=None, description="ConnectorHub connector ID backing this skill")
     agent_families: List[str] = Field(default_factory=list)
 
     model_config = {"extra": "ignore"}

@@ -5,12 +5,14 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 
 from apps.skill_hub import __version__
 from apps.skill_hub.config import SkillHubSettings
+from apps.skill_hub.connector_client import invoke_connector
 from apps.skill_hub.errors import SkillHubError
 from apps.skill_hub.models import (
     InvokeRequest,
@@ -35,6 +37,22 @@ from common.tracing import get_logger
 log = get_logger("skill_hub")
 
 settings = SkillHubSettings()
+
+
+def _first_capability_name(capabilities: list[Any]) -> str | None:
+    """Extract the first capability name from a capabilities list.
+
+    Supports both SkillCapability objects (with .name) and raw dicts.
+    Returns None if the list is empty or no name is found.
+    """
+    if not capabilities:
+        return None
+    cap = capabilities[0]
+    if hasattr(cap, "name"):
+        return cap.name
+    if isinstance(cap, dict):
+        return cap.get("name")
+    return None
 
 
 @asynccontextmanager
@@ -80,6 +98,7 @@ async def register_skill(req: RegisterSkillRequest) -> Skill:
         description=req.description,
         level=req.level,
         capabilities=req.capabilities,
+        connector_id=req.connector_id,
         agent_families=req.agent_families,
         status=SkillStatus.DRAFT,
     )
@@ -114,7 +133,7 @@ async def invoke_skill(
     skill_id: str,
     req: InvokeRequest,
 ) -> InvokeResponse:
-    """Invoke a skill by ID."""
+    """Invoke a skill by ID — routes to ConnectorHub if connector_id is set."""
     start = time.monotonic()
 
     try:
@@ -130,12 +149,60 @@ async def invoke_skill(
             error=f"Skill '{skill_id}' is deprecated",
         )
 
-    duration_ms = int((time.monotonic() - start) * 1000)
+    if not skill.connector_id:
+        # No connector backing this skill yet
+        log.warning("skill.invoke.no_connector", skill_id=skill_id)
+        return InvokeResponse(
+            skill_id=skill_id,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            result={"status": "no_connector", "message": f"Skill '{skill_id}' has no connector_id configured"},
+        )
 
-    # Skill invocation is currently a stub — actual invocation would call
-    # the ConnectorHub or external system. This returns a structured response.
-    return InvokeResponse(
-        skill_id=skill_id,
-        result={"status": "not_implemented", "message": f"Skill '{skill_id}' invoke not yet connected"},
-        duration_ms=duration_ms,
-    )
+    # Derive the capability name from the first capability entry
+    capability_name = _first_capability_name(skill.capabilities)
+    if not capability_name:
+        log.warning("skill.invoke.no_capability", skill_id=skill_id)
+        return InvokeResponse(
+            skill_id=skill_id,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=f"Skill '{skill_id}' has no capabilities defined",
+        )
+
+    try:
+        connector_resp = await invoke_connector(
+            connector_id=skill.connector_id,
+            capability=capability_name,
+            parameters=req.parameters,
+            timeout_seconds=req.timeout_seconds,
+            employee_id=req.employee_id,
+        )
+        return InvokeResponse(
+            skill_id=skill_id,
+            result=connector_resp.get("result"),
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=connector_resp.get("error"),
+        )
+    except httpx.HTTPStatusError as e:
+        log.error(
+            "skill_hub.connector_http_error",
+            skill_id=skill_id,
+            connector_id=skill.connector_id,
+            status=e.response.status_code,
+        )
+        return InvokeResponse(
+            skill_id=skill_id,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=f"ConnectorHub error: {e.response.status_code} — {e.response.text[:200]}",
+        )
+    except httpx.RequestError as e:
+        log.error(
+            "skill_hub.connector_connection_error",
+            skill_id=skill_id,
+            connector_id=skill.connector_id,
+            error=str(e),
+        )
+        return InvokeResponse(
+            skill_id=skill_id,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=f"ConnectorHub unreachable: {e}",
+        )
