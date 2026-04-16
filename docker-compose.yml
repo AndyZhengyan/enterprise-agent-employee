@@ -156,16 +156,16 @@ services:
       context: .
       target: runtime
     environment:
-      SERVICE_PORT: "8006"
+      SERVICE_PORT: "8009"
       REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
     ports:
-      - "8006:8006"
+      - "8009:8009"
     networks:
       - e-agent-os-net
     depends_on:
       - redis
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8006/ops-center/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8009/ops/health"]
       interval: 30s
       timeout: 10s
       retries: 3
