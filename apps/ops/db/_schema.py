@@ -132,6 +132,7 @@ _ALTERS = [
     ("ALTER TABLE blueprints ADD COLUMN user_content TEXT DEFAULT ''", "user config content"),
     ("ALTER TABLE blueprints ADD COLUMN tools_enabled TEXT DEFAULT '[]'", "enabled tool list"),
     ("ALTER TABLE blueprints ADD COLUMN selected_model TEXT DEFAULT ''", "selected model name"),
+    ("ALTER TABLE blueprints ADD COLUMN policy_json TEXT DEFAULT '{}'", "policy config (AgentFamily alignment)"),
     # task_executions additions
     ("ALTER TABLE task_executions ADD COLUMN response_text TEXT", "execution response text"),
 ]

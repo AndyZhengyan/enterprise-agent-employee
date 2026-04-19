@@ -1,4 +1,7 @@
-# apps/ops/routers/onboarding.py — Blueprint management, deploy, traffic, deprecate
+# apps/ops/routers/onboarding.py — AgentFamily management, deploy, traffic, deprecate
+# Note: aligns with Master Spec "AgentFamily" concept.
+# Blueprint = AgentFamily in spec terminology.
+# Routes use /blueprints prefix for backward compatibility with existing frontend.
 import json
 import os
 import time
@@ -9,28 +12,60 @@ from fastapi import APIRouter, Depends, HTTPException
 from apps.ops._auth import verify_api_key
 from apps.ops.db import get_db
 from apps.ops.openclaw_registry import OpenclawAgentRegistry
+from common.models import AgentPolicy
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 
 
+def _parse_policy(policy_json: str | None) -> dict:
+    """Parse and validate policy_json from the blueprints table.
+
+    Returns the parsed dict, or {} if the column is absent/null.
+    Raises ValueError if the JSON is malformed.
+    """
+    if not policy_json:
+        return {}
+    try:
+        parsed = json.loads(policy_json)
+        # Validate with AgentPolicy (silently drops unknown fields)
+        AgentPolicy.model_validate(parsed)
+        return parsed
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid policy_json: {e}")
+
+
 @router.get("/blueprints")
 def get_blueprints(_: bool = Depends(verify_api_key)):
+    """List all AgentFamilies (blueprints).
+
+    Returns agent_family_id for spec alignment, plus legacy blueprint_id for
+    backward compatibility.
+    """
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, role, alias, department, versions, capacity FROM blueprints")
+    cur.execute("SELECT id, role, alias, department, versions, capacity, policy_json FROM blueprints")
     rows = cur.fetchall()
     conn.close()
-    return [
-        {
-            "id": r[0],
-            "role": r[1],
-            "alias": r[2],
-            "department": r[3],
-            "versions": json.loads(r[4]),
-            "capacity": json.loads(r[5]),
-        }
-        for r in rows
-    ]
+    results = []
+    for r in rows:
+        try:
+            policy = _parse_policy(r[6])  # SELECT: id,role,alias,dept,versions,capacity,policy_json
+        except ValueError:
+            policy = {}
+        results.append(
+            {
+                "id": r[0],  # legacy field — tests and consumers depend on this
+                "agent_family_id": r[0],  # spec-aligned field name
+                "blueprint_id": r[0],  # backward-compat alias
+                "role": r[1],
+                "alias": r[2],
+                "department": r[3],
+                "versions": json.loads(r[4]),
+                "capacity": json.loads(r[5]),
+                "policy": policy,
+            }
+        )
+    return results
 
 
 @router.post("/deploy")
@@ -70,10 +105,11 @@ def deploy_avatar(req: dict, _: bool = Depends(verify_api_key)):
 
     conn = get_db()
     cur = conn.cursor()
+    policy_json = json.dumps(req.get("policy", {}))
     cur.execute(
         "INSERT INTO blueprints "
-        "(id, role, alias, department, versions, capacity, openclaw_agent_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(id, role, alias, department, versions, capacity, openclaw_agent_id, policy_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             bp_id,
             req["role"],
@@ -82,17 +118,21 @@ def deploy_avatar(req: dict, _: bool = Depends(verify_api_key)):
             json.dumps([new_version]),
             json.dumps({"used": scaling["minReplicas"], "max": scaling["maxReplicas"]}),
             openclaw_agent_id,
+            policy_json,
         ),
     )
     conn.commit()
     conn.close()
     return {
-        "id": bp_id,
+        "id": bp_id,  # legacy field — tests and consumers depend on this
+        "agent_family_id": bp_id,  # spec-aligned field name
+        "blueprint_id": bp_id,  # backward-compat alias
         "role": req["role"],
         "alias": req["alias"],
         "department": req["department"],
         "versions": [new_version],
         "capacity": {"used": scaling["minReplicas"], "max": scaling["maxReplicas"]},
+        "policy": req.get("policy", {}),
     }
 
 
@@ -106,11 +146,11 @@ def update_traffic(bp_id: str, req: dict, _: bool = Depends(verify_api_key)):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, versions, capacity FROM blueprints WHERE id = ?", (bp_id,))
+    cur.execute("SELECT id, versions, capacity, policy_json FROM blueprints WHERE id = ?", (bp_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
-        raise HTTPException(status_code=404, detail="Blueprint not found")
+        raise HTTPException(status_code=404, detail="AgentFamily not found")
 
     versions = json.loads(row[1])
     if version_idx < 0 or version_idx >= len(versions):
@@ -130,7 +170,17 @@ def update_traffic(bp_id: str, req: dict, _: bool = Depends(verify_api_key)):
     conn.commit()
     conn.close()
 
-    return {"id": bp_id, "versions": versions, "capacity": capacity}
+    try:
+        policy = _parse_policy(row[3])
+    except ValueError:
+        policy = {}
+    return {
+        "agent_family_id": bp_id,
+        "blueprint_id": bp_id,
+        "versions": versions,
+        "capacity": capacity,
+        "policy": policy,
+    }
 
 
 @router.put("/blueprints/{bp_id}/versions/{idx}/deprecate")
@@ -138,11 +188,11 @@ def deprecate_version(bp_id: str, idx: int, _: bool = Depends(verify_api_key)):
     """Deprecate a specific version (traffic=0, status=deprecated)."""
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, versions, capacity FROM blueprints WHERE id = ?", (bp_id,))
+    cur.execute("SELECT id, versions, capacity, policy_json FROM blueprints WHERE id = ?", (bp_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
-        raise HTTPException(status_code=404, detail="Blueprint not found")
+        raise HTTPException(status_code=404, detail="AgentFamily not found")
 
     versions = json.loads(row[1])
     if idx < 0 or idx >= len(versions):
@@ -163,7 +213,17 @@ def deprecate_version(bp_id: str, idx: int, _: bool = Depends(verify_api_key)):
     conn.commit()
     conn.close()
 
-    return {"id": bp_id, "versions": versions, "capacity": capacity}
+    try:
+        policy = _parse_policy(row[3])
+    except ValueError:
+        policy = {}
+    return {
+        "agent_family_id": bp_id,
+        "blueprint_id": bp_id,
+        "versions": versions,
+        "capacity": capacity,
+        "policy": policy,
+    }
 
 
 @router.delete("/blueprints/{bp_id}")
